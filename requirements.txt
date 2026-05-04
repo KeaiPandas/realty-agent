@@ -1,0 +1,10 @@
+langchain-anthropic>=0.3
+langchain-core>=0.3
+pydantic>=2.0
+pydantic-settings>=2.0
+pywxdump>=3.1
+pycryptodome
+pymem
+psutil
+pywin32
+pyyaml

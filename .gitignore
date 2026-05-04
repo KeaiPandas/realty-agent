@@ -1,0 +1,33 @@
+# 环境变量（含API密钥）
+.env
+
+# 运行时数据
+data/
+
+# Python缓存
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# 微信解密数据库
+adapters/decrypted/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node（前端用）
+node_modules/
+frontend/dist/
+
+# Claude Code
+.claude/

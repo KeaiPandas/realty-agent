@@ -1,0 +1,25 @@
+# 微信数据适配器配置
+# 请复制此文件并根据实际情况修改
+
+# 需要总结的群聊名称（精确匹配）
+groups:
+  - ""
+
+# 微信数据目录（改成你自己的路径）
+wechat:
+  data_dir: ""  # 例如: "C:\\Users\\你的用户名\\Documents\\WeChat Files\\wxid_xxxxx"
+
+# AI 配置
+ai:
+  provider: "glm"
+  model: "glm-5"
+  api_key_env: "LLM_API_KEY"
+
+# 推送配置（可选）
+notify:
+  type: ""
+  webhook_url: ""
+
+# 定时配置
+schedule:
+  time: "22:00"
