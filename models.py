@@ -30,7 +30,7 @@ class CustomerProfile(BaseModel):
     keyword: Optional[str] = Field(None, description="引流关键词")
 
     # ── ③旅居信息 ──
-    visited_banna: Optional[str] = Field(None, description="是否来过西双版纳：是/否")
+    visited_banna: Optional[str] = Field(None, description="是否来过目标城市：是/否")
     first_visit_date: Optional[str] = Field(None, description="首次来版纳时间")
     current_visit_date: Optional[str] = Field(None, description="本次来版纳时间")
     planned_settle_date: Optional[str] = Field(None, description="计划定居版纳时间")
@@ -115,7 +115,7 @@ DINGTALK_FIELD_MAP = {
     "引流入口": "entry_point",
     "首次留资时间": "first_contact_date",
     "引流关键词": "keyword",
-    "是否来过西双版纳": "visited_banna",
+    "是否来过目标城市": "visited_banna",
     "首次来版纳时间": "first_visit_date",
     "本次来版纳时间": "current_visit_date",
     "计划定居版纳时间": "planned_settle_date",
