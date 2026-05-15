@@ -1,0 +1,8 @@
+# 微信数据库配置
+# data_dir 留空则自动从进程中检测微信数据目录
+
+data_dir: ""          # 微信数据目录，留空自动检测
+db_names:             # 要解密的数据库文件名
+  - MicroMsg
+  - ChatMsg
+msg_scan_range: 100   # MSG多分片扫描范围上限（MSG0 ~ MSG99）

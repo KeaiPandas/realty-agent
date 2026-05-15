@@ -1,0 +1,14 @@
+# 同步服务 CLI 配置
+# 敏感信息（feishu_base_token 等）建议放 .env 文件，此处留空即可
+
+lark_cli_path: ""     # lark-cli 路径，留空用默认 %APPDATA%\npm\lark-cli.cmd
+dws_cli_path: ""      # dws CLI 路径，留空用默认 %APPDATA%\npm\dws.cmd
+cli_timeout: 30       # CLI 调用超时（秒）
+
+# 飞书多维表格（留空则从 .env 读取）
+feishu_base_token: ""
+feishu_table_id: ""
+
+# 钉钉AI表格（留空则从 .env 读取）
+dingtalk_base_id: ""
+dingtalk_table_id: ""

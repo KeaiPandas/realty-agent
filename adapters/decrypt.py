@@ -158,12 +158,13 @@ def decrypt_all_databases(config):
     print(f"  密钥: {key[:8]}...")
 
     # 需要解密的数据库文件
-    db_files = {
-        "MicroMsg": msg_dir / "MicroMsg.db",
-        "ChatMsg": msg_dir / "ChatMsg.db",
-        "ChatRoomUser": msg_dir / "ChatRoomUser.db",
-        "Misc": msg_dir / "Misc.db",
-    }
+    try:
+        from config import settings
+        db_names = settings.WECHAT_DB_NAMES + ["ChatRoomUser", "Misc"]
+    except Exception:
+        db_names = ["MicroMsg", "ChatMsg", "ChatRoomUser", "Misc"]
+
+    db_files = {name: msg_dir / f"{name}.db" for name in db_names}
 
     # 添加 MSG 多分片文件
     multi_dir = msg_dir / "Multi"

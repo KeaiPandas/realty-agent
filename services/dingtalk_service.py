@@ -1,16 +1,18 @@
 import json
-import os
 import subprocess
 
+from config import settings
 from models import CustomerProfile, DINGTALK_FIELD_MAP
 
-DWS_PATH = os.path.join(os.environ.get("APPDATA", ""), "npm", "dws.cmd")
 
-
-def _run_dws(args: list[str], timeout: int = 30) -> dict:
+def _run_dws(args: list[str], timeout: int = 0) -> dict:
     """调用 dws CLI 并返回JSON结果"""
-    cmd = [DWS_PATH] + args + ["--format", "json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    cmd = [settings.DWS_CLI_PATH] + args + ["--format", "json"]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        timeout=timeout or settings.CLI_TIMEOUT,
+        encoding="utf-8",
+    )
 
     if result.returncode != 0:
         raise RuntimeError(f"dws CLI error: {result.stderr.strip()}")

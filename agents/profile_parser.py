@@ -10,7 +10,7 @@ from models import CustomerProfile
 
 
 def load_prompts() -> dict:
-    prompts_path = Path(__file__).parent.parent / "prompts.yaml"
+    prompts_path = Path(__file__).parent.parent / settings.PROMPTS_FILE
     with open(prompts_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -47,8 +47,8 @@ async def parse_chat_to_profile(
         model=settings.LLM_MODEL,
         api_key=settings.LLM_API_KEY,
         base_url=settings.LLM_BASE_URL,
-        temperature=0,
-        max_tokens=4096,
+        temperature=settings.LLM_TEMPERATURE,
+        max_tokens=settings.LLM_MAX_TOKENS,
     )
 
     # 在prompt中强制要求JSON输出
@@ -72,6 +72,24 @@ async def parse_chat_to_profile(
         content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
     data = json.loads(content)
+
+    # 修正LLM返回的类型偏差
+    # 字符串字段：LLM可能返回int
+    for key in ("phone", "existing_properties", "wechat_name", "douyin_name"):
+        if key in data and data[key] is not None and not isinstance(data[key], str):
+            data[key] = str(data[key])
+    # 数值字段：LLM可能返回字符串
+    for key in ("age", "family_members", "stay_duration_days", "purchase_count",
+                "annual_stay_months", "area_sqm", "budget_total_wan", "price_per_sqm",
+                "down_payment", "monthly_payment"):
+        if key in data and data[key] is not None:
+            try:
+                data[key] = float(data[key])
+                if data[key] == int(data[key]):
+                    data[key] = int(data[key])
+            except (ValueError, TypeError):
+                pass
+
     return CustomerProfile(**data)
 
 

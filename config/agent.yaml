@@ -1,0 +1,4 @@
+# Agent 行为参数
+
+dm_msg_limit: 200         # 默认私聊消息提取条数
+list_contacts_limit: 50   # 列出联系人时的显示上限

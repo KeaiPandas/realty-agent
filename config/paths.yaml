@@ -1,0 +1,4 @@
+# 文件路径配置
+
+data_dir: "data"              # 解密数据库和画像输出的本地目录
+prompts_file: "prompts.yaml"  # 提示词文件路径（相对于项目根目录）

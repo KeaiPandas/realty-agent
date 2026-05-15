@@ -6,6 +6,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
+def _get_msg_scan_range() -> int:
+    """获取MSG扫描范围（延迟导入避免循环依赖）"""
+    from config import settings
+    return settings.MSG_SCAN_RANGE
+
+
+def _get_dm_msg_limit() -> int:
+    """获取默认消息提取条数（延迟导入避免循环依赖）"""
+    from config import settings
+    return settings.DM_MSG_LIMIT
+
+
 def get_group_info(db_path):
     """从 MicroMsg.db 获取群聊信息
 
@@ -165,7 +177,7 @@ def extract_messages(db_paths, target_groups, date=None):
 
     # 从所有消息数据库中提取消息
     msg_dbs = []
-    for name in ["ChatMsg"] + [f"MSG{i}" for i in range(100)]:
+    for name in ["ChatMsg"] + [f"MSG{i}" for i in range(_get_msg_scan_range())]:
         if name in db_paths:
             msg_dbs.append(db_paths[name])
 
@@ -334,12 +346,15 @@ def get_dm_contacts(db_path: str) -> list[dict]:
 
 
 def extract_dm_messages(
-    db_paths: dict, contact_id: str, date: str | None = None, limit: int = 200
+    db_paths: dict, contact_id: str, date: str | None = None, limit: int = 0
 ) -> list[dict]:
     """提取指定联系人的私聊消息
 
     与群聊的关键区别：DM消息的StrContent直接是消息内容，无需split(":\n")
     """
+    if limit <= 0:
+        limit = _get_dm_msg_limit()
+
     if date is None:
         target_date = datetime.now()
     else:
@@ -354,7 +369,7 @@ def extract_dm_messages(
     nicknames = get_contact_nicknames(micromsg_path) if micromsg_path else {}
 
     msg_dbs = []
-    for name in ["ChatMsg"] + [f"MSG{i}" for i in range(100)]:
+    for name in ["ChatMsg"] + [f"MSG{i}" for i in range(_get_msg_scan_range())]:
         if name in db_paths:
             msg_dbs.append(db_paths[name])
 

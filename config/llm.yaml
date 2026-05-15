@@ -1,0 +1,9 @@
+# LLM 模型配置
+# 敏感信息（api_key）建议放 .env 文件，此处留空即可
+# 优先级：.env 环境变量 > 本文件 > 代码默认值
+
+api_key: ""           # 留空则从 .env 读取 LLM_API_KEY
+base_url: ""          # 留空则从 .env 读取 LLM_BASE_URL
+model: ""             # 留空则从 .env 读取 LLM_MODEL
+temperature: 0        # 0=确定性输出，1=创造性
+max_tokens: 4096      # 最大输出token数

@@ -45,11 +45,11 @@ def step_list_contacts(db_paths: dict):
 
     contacts = get_dm_contacts(micromsg_path)
     print(f"\n共 {len(contacts)} 个私聊联系人：")
-    for i, c in enumerate(contacts[:50], 1):
+    for i, c in enumerate(contacts[:settings.LIST_CONTACTS_LIMIT], 1):
         alias_str = f" (微信号: {c['alias']})" if c["alias"] else ""
         print(f"  {i}. {c['nickname']}{alias_str} [{c['wxid']}]")
-    if len(contacts) > 50:
-        print(f"  ... 还有 {len(contacts) - 50} 个")
+    if len(contacts) > settings.LIST_CONTACTS_LIMIT:
+        print(f"  ... 还有 {len(contacts) - settings.LIST_CONTACTS_LIMIT} 个")
 
 
 def step_extract_dm(db_paths: dict, contact_id: str, date: str | None = None) -> list:
@@ -98,6 +98,22 @@ def step_sync_dingtalk(profile: CustomerProfile):
     print(f"   详情: {json.dumps(result, ensure_ascii=False, indent=2)}")
 
 
+def step_sync_feishu(profile: CustomerProfile):
+    """Step 4 (alt): 同步飞书"""
+    from services.feishu_service import sync_profile_to_feishu
+
+    if not settings.FEISHU_BASE_TOKEN or not settings.FEISHU_TABLE_ID:
+        print("\n[4/4] 跳过飞书同步（未配置 FEISHU_BASE_TOKEN / FEISHU_TABLE_ID）")
+        return
+
+    print(f"[4/4] 同步到飞书 (客户: {profile.name or profile.phone or '未知'})...")
+    result = sync_profile_to_feishu(
+        profile, settings.FEISHU_BASE_TOKEN, settings.FEISHU_TABLE_ID
+    )
+    print(f"   结果: {result['action']}")
+    print(f"   详情: {json.dumps(result, ensure_ascii=False, indent=2)}")
+
+
 async def run_pipeline(
     contact_id: str,
     date: str | None = None,
@@ -122,7 +138,7 @@ async def run_pipeline(
     profile = await step_parse(chat_content)
 
     # 保存解析结果到本地
-    output_path = Path(__file__).parent / "data" / f"profile_{contact_id}.json"
+    output_path = Path(__file__).parent / settings.DATA_DIR / f"profile_{contact_id}.json"
     output_path.parent.mkdir(exist_ok=True)
     output_path.write_text(
         json.dumps(profile.model_dump(exclude_none=True), ensure_ascii=False, indent=2),
@@ -130,11 +146,11 @@ async def run_pipeline(
     )
     print(f"\n   画像已保存: {output_path}")
 
-    # Step 4: 同步钉钉
+    # Step 4: 同步飞书
     if not parse_only:
-        step_sync_dingtalk(profile)
+        step_sync_feishu(profile)
     else:
-        print("\n[4/4] --parse-only 模式，跳过钉钉同步")
+        print("\n[4/4] --parse-only 模式，跳过同步")
 
 
 async def run_parse_file(file_path: str, parse_only: bool = True):
@@ -144,7 +160,7 @@ async def run_parse_file(file_path: str, parse_only: bool = True):
 
     profile = await step_parse(chat_content)
 
-    output_path = Path(__file__).parent / "data" / f"profile_parsed.json"
+    output_path = Path(__file__).parent / settings.DATA_DIR / f"profile_parsed.json"
     output_path.parent.mkdir(exist_ok=True)
     output_path.write_text(
         json.dumps(profile.model_dump(exclude_none=True), ensure_ascii=False, indent=2),
@@ -153,7 +169,7 @@ async def run_parse_file(file_path: str, parse_only: bool = True):
     print(f"\n   画像已保存: {output_path}")
 
     if not parse_only:
-        step_sync_dingtalk(profile)
+        step_sync_feishu(profile)
 
 
 def main():

@@ -12,95 +12,98 @@ profile_parser:
     3. 数值字段（如面积、预算）必须提取数字，不要带单位
     4. 日期字段统一用 YYYY-MM-DD 格式
     5. 多值字段（如意向区域、偏好）用逗号分隔
+    6. 单选字段必须严格从给定选项中选择一个，不要创造新值
+    7. 多选字段从给定选项中选择，多个用逗号分隔
 
-    ## 客户画像字段说明（共69个）
+    ## 客户画像字段说明
 
     ### 系统字段
     - customer_id: 用户唯一ID（如已有则保留，新客户留空）
-    - phone: 手机号（11位数字）
+    - phone: 手机号（11位数字字符串）
+    - wechat_id: 微信号（必填，用于唯一标识客户，如从聊天对象获取）
+    - wechat_name: 微信名称（客户在微信上显示的昵称）
 
     ### ①基本信息
     - name: 客户姓名
     - gender: 性别（男/女）
-    - age_range: 年龄区间（如30-40岁）
+    - age: 年龄（整数数字，如52）
     - hometown: 籍贯
     - current_city: 现在居住城市
     - employer_type: 工作单位性质
-    - family_members: 家庭常住人口数
-    - marital_status: 婚姻状况（已婚/未婚/离异）
-    - children_status: 子女状况
+    - family_members: 家庭常住人口数（整数）
+    - marital_status: 婚姻状况（已婚 / 未婚 / 离异，严格单选）
+    - children_status: 子女状况（如1个孩子12岁）
     - elder_care: 赡养老人情况
-    - wechat_name: 微信名称
     - douyin_name: 抖音昵称
 
     ### ②客户来源
-    - source_channel: 获客渠道（抖音/视频号/小红书）
-    - entry_point: 引流入口（短视频/直播/文章）
-    - first_contact_date: 首次留资时间
+    - source_channel: 获客渠道（抖音 / 视频号 / 小红书，严格单选）
+    - entry_point: 引流入口（短视频 / 直播 / 图文 / 私信，严格单选）
+    - first_contact_date: 首次留资时间（YYYY-MM-DD）
     - keyword: 引流关键词
 
     ### ③旅居信息
     - visited_banna: 是否来过目标城市（是/否）
-    - first_visit_date: 首次来版纳时间
-    - current_visit_date: 本次来版纳时间
-    - planned_settle_date: 计划定居版纳时间
-    - stay_duration_days: 停留天数
+    - first_visit_date: 首次来版纳时间（YYYY-MM-DD）
+    - current_visit_date: 本次来版纳时间（YYYY-MM-DD）
+    - planned_settle_date: 计划定居版纳时间（YYYY-MM-DD）
+    - stay_duration_days: 停留天数（整数）
     - visit_purpose: 来版纳主要目的
-    - annual_stay_months: 每年计划来版纳居住月数
+    - annual_stay_months: 每年计划来版纳居住月数（整数）
 
     ### ④核心购房需求
-    - purchase_purpose: 购房目的（旅居度假/养老/投资/刚需/改善）
+    - purchase_purpose: 购房核心目的（自住养老 / 旅居度假 / 长期投资 / 短期出租 / 刚需安家 / 赡养老人 / 康养医疗 / 创业办公，严格单选）
     - purchase_reason: 购房首要原因
-    - preferred_area: 意向区域（嘎洒/嘎栋/曼弄枫/江北等）
+    - preferred_area: 意向区域（嘎洒 / 嘎栋 / 曼弄枫 / 老城区 / 江北 / 市区外，可多选逗号分隔）
     - property_type: 房源类型（别墅/洋房/高层/公寓）
-    - purchase_count: 购房套数
-    - layout: 意向户型（1室/2室/3室/4室）
-    - area_sqm: 意向建筑面积（平方米）
+    - purchase_count: 购房套数（整数）
+    - layout: 意向户型（1室 / 2室 / 3室 / 4室 / 复式 / 带花园 / 3室,带花园，单选或多选用逗号分隔）
+    - area_sqm: 意向建筑面积（数字，平方米）
     - floor_preference: 楼层偏好
-    - decoration_standard: 装修标准（毛坯/简装/精装）
-    - budget_total_wan: 预算总价（万元）
-    - price_per_sqm: 单价范围（元/平）
-    - planned_time: 计划购房时间
+    - decoration_standard: 装修标准（毛坯 / 简装 / 精装 / 拎包入住，严格单选）
+    - budget_total_wan: 预算总价（数字，万元）
+    - price_per_sqm: 单价范围（数字，元/平）
+    - planned_time: 计划购房时间（YYYY-MM-DD格式，或如3-6个月等文字描述）
 
     ### ⑤个人偏好
     - orientation: 朝向偏好
     - view_preference: 景观偏好
-    - facilities_needed: 生活配套需求
+    - facilities_needed: 生活配套需求（超市 / 菜市场 / 医院 / 学校 / 公园 / 公交 / 商圈 / 运动 / 康养，可多选逗号分隔）
     - community_env: 小区环境偏好
     - decoration_style: 装修风格
     - living_env: 居住环境偏好
     - climate_preference: 气候需求
     - lifestyle: 生活习惯
-    - travel_mode: 出行方式
-    - extra_hobbies: 额外喜好
+    - travel_mode: 出行方式（自驾 / 公共交通 / 步行，严格单选）
+    - extra_hobbies: 额外喜好（自由文本，如养花、散步、钓鱼等）
 
     ### ⑥预算资质
-    - payment_method: 付款方式（全款/商贷/公积金/组合贷）
-    - down_payment: 首付预算
-    - monthly_payment: 月供范围（元）
+    - payment_method: 付款方式（全款 / 商贷 / 公积金 / 组合贷，严格单选）
+    - down_payment: 首付预算（数字，万元）
+    - monthly_payment: 月供范围（数字，元）
     - existing_properties: 名下房产
-    - credit_status: 征信情况
-    - fund_status: 资金情况
+    - credit_status: 征信情况（良好 / 一般 / 有逾期，严格单选）
+    - fund_status: 资金情况（已到位 / 筹备中 / 待定，严格单选）
 
     ### ⑦跟进沟通
-    - first_followup_date: 首次跟进时间
-    - latest_followup_date: 本次跟进时间
+    - first_followup_date: 首次跟进时间（YYYY-MM-DD）
+    - latest_followup_date: 本次跟进时间（YYYY-MM-DD）
     - followup_content: 跟进核心内容
-    - demand_update: 客户诉求更新
+    - demand_update: 客户核心诉求
     - concern_points: 客户顾虑点
     - interested_properties: 意向房源记录
     - rejected_reason: 拒绝原因
-    - next_followup_date: 预计下次跟进时间
+    - next_followup_date: 预计下次跟进时间（YYYY-MM-DD）
 
     ### ⑧跟进阶段
     - followup_stage: 阶段（初步咨询/意向筛选/带看洽谈/成交/流失待定）
 
     ### ⑨画像总结
-    - tags: 核心标签（逗号分隔）
-    - personality: 性格特征
-    - decision_maker: 真正决策人
-    - trust_level: 信任度（高/中/低）
-    - deal_probability: 成交概率（高/中/低）
+    - tags: 核心标签（养老 / 刚需 / 改善 / 投资 / 年轻旅居 / 出租 / 民宿，多选用逗号分隔）
+    - personality: 性格特征（果断 / 犹豫 / 理性 / 感性 / 注重性价比 / 注重品质，多选用逗号分隔）
+    - decision_maker: 真正决策人（本人 / 配偶 / 父母 / 子女 / 本人,配偶 / 夫妻共商，严格单选）
+    - trust_level: 信任度（高 / 中 / 低）
+    - deal_probability: 成交概率（高 / 中 / 低）
     - followup_strategy: 跟进策略
     - special_notes: 特殊需求备注
 
