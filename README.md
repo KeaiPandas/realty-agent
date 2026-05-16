@@ -19,45 +19,112 @@ AI房产客服系统 — 微信聊天记录提取 → AI画像解析 → 飞书/
 
 ## 快速开始
 
-### 1. 安装依赖
+> 以下步骤假设你的电脑是一台全新的 Windows 机器，没有安装过 Python 和 Git。
 
-要求 **Python 3.12**（项目依赖 PyAudio，3.12 有预编译 wheel，3.13+ 需要自行编译 C 扩展）。
+### 前置条件：安装 Git
+
+如果你已经有 Git，跳过这步。
+
+1. 打开浏览器访问 https://git-scm.com/download/win
+2. 下载并安装，安装过程中全部点"下一步"即可
+3. 安装完成后，在开始菜单搜索 **Git Bash** 并打开，输入 `git --version` 验证安装成功
+
+### 第 1 步：下载项目代码
 
 ```bash
-# 创建虚拟环境（推荐）
-py -3.12 -m venv .venv
-.venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # macOS/Linux
+# 把代码克隆到本地（在 Git Bash 或终端中执行）
+git clone <项目仓库地址>
+cd realty-agent
+```
 
-# 安装锁定版本（确保所有环境依赖一致）
+> 如果你已经下载了代码压缩包并解压，直接 `cd` 进入项目目录即可。
+
+### 第 2 步：安装 Python 3.12
+
+> **为什么是 3.12？** 项目依赖 PyAudio（微信语音处理），只有 Python 3.12 有预编译的安装包。使用 3.13 或更高版本会要求你额外安装 C++ 编译器，非常麻烦。
+
+**方法 A — winget（推荐，Win10/11 自带）：**
+
+打开终端（PowerShell 或 CMD），执行：
+
+```bash
+winget install Python.Python.3.12
+```
+
+安装完成后 **关闭并重新打开终端**，然后验证：
+
+```bash
+py -3.12 --version
+# 应该输出：Python 3.12.x
+```
+
+**方法 B — 手动下载：**
+
+1. 访问 https://www.python.org/downloads/release/python-31210/
+2. 滚动到底部，下载 **Windows installer (64-bit)**
+3. 运行安装程序，**务必勾选 "Add python.exe to PATH"**
+4. 安装完成后关闭并重新打开终端，运行 `py -3.12 --version` 验证
+
+### 第 3 步：创建虚拟环境并安装依赖
+
+> **什么是虚拟环境？** 它把项目的 Python 包隔离在项目目录内，不会污染系统 Python，也不会和其他项目冲突。
+
+```bash
+# 进入项目目录（如果还没进入的话）
+cd realty-agent
+
+# 创建虚拟环境（只需要执行一次）
+py -3.12 -m venv .venv
+
+# 激活虚拟环境（每次打开新终端都需要执行）
+.venv\Scripts\activate
+
+# 激活后命令行前面会出现 (.venv) 标识，说明已激活
+# 安装所有依赖（锁定了版本号，确保所有人环境一致）
 pip install -r requirements.lock
 ```
 
-> 如需升级依赖，修改 `requirements.txt` 后重新生成 lock 文件：
+> 安装过程需要几分钟，看到 `Successfully installed ...` 就是成功了。
+>
+> **常见问题：** 如果 `pip install` 报错 `No module named pip`，先执行：
 > ```bash
-> pip install -r requirements.txt
-> pip freeze > requirements.lock
+> py -3.12 -m ensurepip
 > ```
 
-### 2. 配置
+> **注意：** 每次关闭终端后虚拟环境会自动退出。下次重新打开终端进入项目时，需要再次执行 `.venv\Scripts\activate`。
+
+### 第 4 步：配置环境变量
+
+项目需要 LLM API 密钥等敏感信息，通过 `.env` 文件配置（此文件不会提交到 Git）。
 
 ```bash
+# 从模板复制一份配置文件
 cp .env.example .env
 ```
 
-编辑 `.env` 填入敏感凭证：
+然后用任意文本编辑器打开 `.env`，填入你的真实信息：
 
 ```env
+# LLM API 配置（必填，不填无法使用 AI 解析功能）
 LLM_API_KEY=你的API密钥
 LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 LLM_MODEL=glm-5
+
+# 微信数据目录（留空会自动检测，一般不用改）
+WECHAT_DATA_DIR=
+
+# 飞书多维表格（如果不用飞书同步，可以留空）
 FEISHU_BASE_TOKEN=你的飞书base_token
 FEISHU_TABLE_ID=你的飞书table_id
+
+# 钉钉AI表格（如果不用钉钉同步，可以留空）
 DINGTALK_BASE_ID=你的钉钉base_id
 DINGTALK_TABLE_ID=你的钉钉table_id
 ```
 
-非敏感参数按需修改 `config/` 下的YAML文件：
+> 最少只需填写 `LLM_API_KEY` 即可启动服务。飞书和钉钉配置如果不使用对应同步功能可以留空。
+
+非敏感参数按需修改 `config/` 下的 YAML 文件：
 
 | 文件 | 内容 |
 |------|------|
@@ -67,13 +134,30 @@ DINGTALK_TABLE_ID=你的钉钉table_id
 | `config/agent.yaml` | 消息提取条数、联系人显示上限 |
 | `config/paths.yaml` | 数据目录、提示词文件路径 |
 
-### 3. 启动仪表盘
+### 第 5 步：启动服务
 
 ```bash
+# 确保已激活虚拟环境（命令行前面有 (.venv)）
+.venv\Scripts\activate
+
+# 启动 Web 服务
 uvicorn api.server:app --reload --port 8000
 ```
 
-浏览器打开 http://localhost:8000，即可使用Web仪表盘：
+看到类似以下输出说明启动成功：
+
+```
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process
+```
+
+然后用浏览器打开 **http://localhost:8000**，即可使用 Web 仪表盘。
+
+> **停止服务：** 在终端中按 `Ctrl + C`
+>
+> **`--reload` 参数：** 开发模式下代码修改后服务会自动重启。生产环境部署时去掉这个参数。
+
+### Web 仪表盘功能
 
 1. **环境状态** — 自动检测微信进程、数据库、LLM接口、飞书连通性
 2. **联系人选择** — 点击解密后加载联系人列表，支持搜索和备注名优先显示
@@ -82,9 +166,13 @@ uvicorn api.server:app --reload --port 8000
 5. **工具调用日志** — 按任务筛选查看每一步的输入/输出/耗时
 6. **定时任务** — 通过弹窗创建 cron 定时扫描任务
 
-### 4. 命令行使用
+### 命令行使用
+
+除了 Web 仪表盘，也可以直接用命令行操作（同样需要先激活虚拟环境）：
 
 ```bash
+.venv\Scripts\activate
+
 # 列出微信私聊联系人（需先登录微信PC版）
 python main.py --list-contacts
 
@@ -137,7 +225,8 @@ python main.py --parse-file <chat.txt>
 ├── models.py                  # 客户画像Pydantic模型 + 字段映射
 ├── prompts.yaml               # 提示词配置
 ├── main.py                    # 管道入口
-└── requirements.txt
+├── requirements.txt           # 依赖声明（宽松版本范围）
+└── requirements.lock          # 依赖锁定（精确版本号，部署用这个）
 ```
 
 ## API 端点
