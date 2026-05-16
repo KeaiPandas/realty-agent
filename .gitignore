@@ -4,6 +4,9 @@
 # 运行时数据
 data/
 
+# Python虚拟环境
+.venv/
+
 # Python缓存
 __pycache__/
 *.pyc

@@ -21,9 +21,23 @@ AI房产客服系统 — 微信聊天记录提取 → AI画像解析 → 飞书/
 
 ### 1. 安装依赖
 
+要求 **Python 3.12**（项目依赖 PyAudio，3.12 有预编译 wheel，3.13+ 需要自行编译 C 扩展）。
+
 ```bash
-pip install -r requirements.txt
+# 创建虚拟环境（推荐）
+py -3.12 -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS/Linux
+
+# 安装锁定版本（确保所有环境依赖一致）
+pip install -r requirements.lock
 ```
+
+> 如需升级依赖，修改 `requirements.txt` 后重新生成 lock 文件：
+> ```bash
+> pip install -r requirements.txt
+> pip freeze > requirements.lock
+> ```
 
 ### 2. 配置
 
@@ -189,7 +203,7 @@ python main.py --parse-file <chat.txt>
 - **飞书同步**: lark-cli
 - **钉钉同步**: dws CLI
 - **定时任务**: APScheduler
-- **Python**: 3.11+
+- **Python**: 3.12
 
 ## License
 
