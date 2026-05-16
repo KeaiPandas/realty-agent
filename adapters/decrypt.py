@@ -23,12 +23,27 @@ def get_wx_info():
     return _get_key_from_memory()
 
 
+def _find_wechat_process():
+    """查找微信主进程（兼容不同版本的进程名）"""
+    import pymem
+    # 新版微信使用 WeChatAppEx，旧版使用 WeChat.exe
+    for name in ("WeChat.exe", "WeChatAppEx.exe"):
+        try:
+            return pymem.Pymem(name)
+        except Exception:
+            continue
+    raise RuntimeError(
+        "未找到微信进程，请确保微信已登录并运行。"
+        "如果仍无法检测，请在 config/wechat.yaml 中手动配置 data_dir"
+    )
+
+
 def _get_key_from_memory():
     """从微信进程内存中提取数据库密钥"""
     import pymem
     import pymem.process
 
-    pm = pymem.Pymem("WeChat.exe")
+    pm = _find_wechat_process()
 
     # 查找 WeChatWin.dll
     wechat_win = None

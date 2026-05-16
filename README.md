@@ -124,12 +124,26 @@ DINGTALK_TABLE_ID=你的钉钉table_id
 
 > 最少只需填写 `LLM_API_KEY` 即可启动服务。飞书和钉钉配置如果不使用对应同步功能可以留空。
 
+**微信数据目录配置：**
+
+程序通常会自动检测微信数据目录。如果仪表盘显示"无法自动检测微信数据目录"，需要手动配置：
+
+1. 打开微信 PC 版 → 左下角菜单 → 设置 → 文件管理 → 打开文件夹
+2. 你会进入类似 `C:\Users\你的用户名\Documents\WeChat Files\wxid_xxxxx\` 的目录
+3. 将这个路径填写到 `.env` 中的 `WECHAT_DATA_DIR`：
+
+```env
+WECHAT_DATA_DIR=C:\Users\你的用户名\Documents\WeChat Files\wxid_xxxxx
+```
+
+或者填写到 `config/wechat.yaml` 的 `data_dir` 字段（效果相同）。
+
 非敏感参数按需修改 `config/` 下的 YAML 文件：
 
 | 文件 | 内容 |
 |------|------|
 | `config/llm.yaml` | LLM温度、最大token数 |
-| `config/wechat.yaml` | 数据库名、扫描范围（微信数据目录会自动检测，无需手动配置） |
+| `config/wechat.yaml` | 数据库名、扫描范围、微信数据目录 |
 | `config/sync.yaml` | CLI工具路径、超时时间 |
 | `config/agent.yaml` | 消息提取条数、联系人显示上限 |
 | `config/paths.yaml` | 数据目录、提示词文件路径 |
@@ -144,9 +158,22 @@ DINGTALK_TABLE_ID=你的钉钉table_id
 # 安装 lark-cli（飞书多维表格命令行工具）
 npm install -g lark-cli
 
-# 验证安装
+# 验证安装（必须看到版本号输出才算安装成功）
 lark-cli --version
 ```
+
+> **常见问题：** 如果 `lark-cli --version` 提示"命令未找到"，说明 npm 全局路径没加入 PATH。有两种解决方式：
+>
+> **方式 A — 将 npm 全局路径加入 PATH（推荐）：**
+> 1. 终端中运行 `npm config get prefix` 查看 npm 全局路径（通常是 `C:\Users\你的用户名\AppData\Roaming\npm`）
+> 2. 打开 Windows 设置 → 搜索"环境变量" → 编辑用户环境变量 → 在 PATH 中添加上面的路径
+> 3. 关闭并重新打开终端，再试 `lark-cli --version`
+>
+> **方式 B — 手动指定路径：**
+> 在 `config/sync.yaml` 中填写 lark-cli 的完整路径：
+> ```yaml
+> lark_cli_path: "C:\\Users\\你的用户名\\AppData\\Roaming\\npm\\lark-cli.cmd"
+> ```
 
 安装完成后，在 `.env` 文件中填写飞书配置：
 

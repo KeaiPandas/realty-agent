@@ -40,15 +40,35 @@ def _check_wechat_db() -> dict:
             sys.stderr = old_stderr
         if info and isinstance(info, list) and info[0].get("wx_dir"):
             return {"status": "ok", "message": "已通过 pywxdump 自动检测到微信数据"}
-        return {"status": "error", "message": "无法自动检测微信数据目录，请在 config/wechat.yaml 配置 data_dir"}
+        return {
+            "status": "error",
+            "message": (
+                "无法自动检测微信数据目录。"
+                "请在 config/wechat.yaml 中配置 data_dir，"
+                "路径通常类似: C:\\Users\\<用户名>\\Documents\\WeChat Files\\<wxid_xxx>"
+            ),
+        }
     except Exception as e:
-        return {"status": "error", "message": f"自动检测失败: {e}"}
+        return {
+            "status": "error",
+            "message": (
+                f"自动检测失败: {e}。"
+                "请在 config/wechat.yaml 中手动配置 data_dir"
+            ),
+        }
 
 
 def _check_feishu() -> dict:
     lark_path = Path(settings.LARK_CLI_PATH)
     if not lark_path.exists():
-        return {"status": "error", "message": f"lark-cli 未找到: {lark_path}"}
+        return {
+            "status": "error",
+            "message": (
+                f"lark-cli 未找到: {lark_path}。"
+                "请安装: npm install -g lark-cli，"
+                "或在 config/sync.yaml 中配置 lark_cli_path"
+            ),
+        }
     has_token = bool(settings.FEISHU_BASE_TOKEN)
     has_table = bool(settings.FEISHU_TABLE_ID)
     if has_token and has_table:
