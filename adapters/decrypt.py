@@ -136,7 +136,15 @@ def decrypt_all_databases(config):
     Returns:
         dict: 解密后的数据库路径 {名称: 路径}
     """
-    wechat_dir = Path(config["wechat"]["data_dir"])
+    wechat_dir = config.get("wechat", {}).get("data_dir", "")
+    if not wechat_dir:
+        # 自动检测：从微信进程获取数据目录
+        wx_info = get_wx_info()
+        if isinstance(wx_info, list) and wx_info:
+            wechat_dir = wx_info[0].get("wx_dir", "")
+        if not wechat_dir:
+            raise RuntimeError("无法自动检测微信数据目录，请在 config/wechat.yaml 中配置 data_dir")
+    wechat_dir = Path(wechat_dir)
     msg_dir = wechat_dir / "Msg"
     output_dir = wechat_dir / "decrypted"
     output_dir.mkdir(exist_ok=True)

@@ -129,10 +129,35 @@ DINGTALK_TABLE_ID=你的钉钉table_id
 | 文件 | 内容 |
 |------|------|
 | `config/llm.yaml` | LLM温度、最大token数 |
-| `config/wechat.yaml` | 微信数据目录、数据库名、扫描范围 |
+| `config/wechat.yaml` | 数据库名、扫描范围（微信数据目录会自动检测，无需手动配置） |
 | `config/sync.yaml` | CLI工具路径、超时时间 |
 | `config/agent.yaml` | 消息提取条数、联系人显示上限 |
 | `config/paths.yaml` | 数据目录、提示词文件路径 |
+
+### 第 4.5 步：（可选）安装飞书同步工具
+
+如果你需要把客户画像同步到飞书多维表格，需要安装 `lark-cli` 命令行工具。不需要飞书同步可以跳过。
+
+> **前提：** 需要先安装 [Node.js](https://nodejs.org/)（下载 LTS 版本，安装时全部点"下一步"即可）。
+
+```bash
+# 安装 lark-cli（飞书多维表格命令行工具）
+npm install -g lark-cli
+
+# 验证安装
+lark-cli --version
+```
+
+安装完成后，在 `.env` 文件中填写飞书配置：
+
+```env
+FEISHU_BASE_TOKEN=你的飞书多维表格base_token
+FEISHU_TABLE_ID=你的飞书多维表格table_id
+```
+
+> **如何获取 base_token 和 table_id：** 打开飞书多维表格的网页链接，URL 格式为：
+> `https://xxx.feishu.cn/base/XXXXXXXXXXXXXX?table=tblYYYYYYYYYY`
+> 其中 `XXXXXXXXXXXXXX` 是 `FEISHU_BASE_TOKEN`，`tblYYYYYYYYYY` 是 `FEISHU_TABLE_ID`。
 
 ### 第 5 步：启动服务
 
