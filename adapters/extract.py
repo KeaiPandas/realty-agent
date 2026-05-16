@@ -298,8 +298,23 @@ def format_messages(group_name, messages, date=None):
     return "\n".join(lines)
 
 
+def _get_msg_scan_range() -> int:
+    """获取MSG扫描范围（延迟导入避免循环依赖）"""
+    from config import settings
+    return settings.MSG_SCAN_RANGE
+
+
+def _get_dm_msg_limit() -> int:
+    """获取默认消息提取条数（延迟导入避免循环依赖）"""
+    from config import settings
+    return settings.DM_MSG_LIMIT
+
+
 def get_dm_contacts(db_path: str) -> list[dict]:
-    """获取所有私聊联系人（排除群聊、公众号、系统号）"""
+    """获取所有私聊联系人（排除群聊、公众号、系统号）
+
+    仅从 Contact 表查询，不检查是否有消息记录。
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -345,25 +360,109 @@ def get_dm_contacts(db_path: str) -> list[dict]:
     return contacts
 
 
+def get_dm_contacts_with_messages(db_paths: dict) -> list[dict]:
+    """获取有实际私聊消息的联系人（从消息库筛选，排除群聊）"""
+    micromsg_path = db_paths.get("MicroMsg")
+    nicknames = get_contact_nicknames(micromsg_path) if micromsg_path else {}
+
+    # 从 MicroMsg 获取 alias 信息
+    aliases = {}
+    if micromsg_path:
+        try:
+            conn = sqlite3.connect(micromsg_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT UserName, NickName, Alias FROM Contact")
+            for row in cursor.fetchall():
+                aliases[row["UserName"]] = {
+                    "nickname": row["NickName"] or "",
+                    "alias": row["Alias"] or "",
+                }
+            conn.close()
+        except Exception:
+            pass
+
+    msg_dbs = []
+    for name in ["ChatMsg"] + [f"MSG{i}" for i in range(_get_msg_scan_range())]:
+        if name in db_paths:
+            msg_dbs.append(db_paths[name])
+
+    contact_msgs = {}
+    for msg_db in msg_dbs:
+        if not Path(msg_db).exists():
+            continue
+        try:
+            conn = sqlite3.connect(msg_db)
+            cursor = conn.cursor()
+            tables = [r[0] for r in cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()]
+            msg_table = None
+            for t in tables:
+                if t.upper() == "MSG":
+                    msg_table = t
+                    break
+            if not msg_table:
+                conn.close()
+                continue
+            cursor.execute(f"""
+                SELECT StrTalker, COUNT(*) as cnt
+                FROM {msg_table}
+                WHERE Type = 1
+                  AND StrTalker NOT LIKE ? ESCAPE '\\'
+                  AND StrTalker NOT LIKE ?
+                  AND StrTalker NOT IN ('filehelper', 'floatbottle', 'medianote')
+                GROUP BY StrTalker
+            """, ('%@chatroom', 'gh_%'))
+            for row in cursor.fetchall():
+                wxid, cnt = row
+                contact_msgs[wxid] = contact_msgs.get(wxid, 0) + cnt
+            conn.close()
+        except Exception:
+            pass
+
+    results = []
+    for wxid, msg_count in sorted(contact_msgs.items(), key=lambda x: -x[1]):
+        info = aliases.get(wxid, {})
+        results.append({
+            "wxid": wxid,
+            "nickname": info.get("nickname") or nicknames.get(wxid, ""),
+            "alias": info.get("alias", ""),
+            "msg_count": msg_count,
+        })
+    return results
+
+
 def extract_dm_messages(
-    db_paths: dict, contact_id: str, date: str | None = None, limit: int = 0
+    db_paths: dict, contact_id: str,
+    date: str | None = None,
+    date_start: str | None = None,
+    date_end: str | None = None,
+    limit: int = 0,
 ) -> list[dict]:
     """提取指定联系人的私聊消息
 
-    与群聊的关键区别：DM消息的StrContent直接是消息内容，无需split(":\n")
+    日期过滤优先级：date_start+date_end > date > 无过滤
     """
     if limit <= 0:
         limit = _get_dm_msg_limit()
 
-    if date is None:
-        target_date = datetime.now()
-    else:
+    filter_date = True
+    if date_start and date_end:
+        start_ts = int(datetime.strptime(date_start, "%Y-%m-%d").timestamp())
+        end_ts = int(
+            (datetime.strptime(date_end, "%Y-%m-%d") + timedelta(days=1)).timestamp()
+        )
+    elif date:
         target_date = datetime.strptime(date, "%Y-%m-%d")
-
-    start_ts = int(target_date.replace(hour=0, minute=0, second=0).timestamp())
-    end_ts = int(
-        (target_date + timedelta(days=1)).replace(hour=0, minute=0, second=0).timestamp()
-    )
+        start_ts = int(target_date.replace(hour=0, minute=0, second=0).timestamp())
+        end_ts = int(
+            (target_date + timedelta(days=1)).replace(hour=0, minute=0, second=0).timestamp()
+        )
+    else:
+        filter_date = False
+        start_ts = 0
+        end_ts = 0
 
     micromsg_path = db_paths.get("MicroMsg")
     nicknames = get_contact_nicknames(micromsg_path) if micromsg_path else {}
@@ -408,19 +507,32 @@ def extract_dm_messages(
                 conn.close()
                 continue
 
-            cursor.execute(
-                f"""
-                SELECT localId, StrTalker, CreateTime, Type, StrContent
-                FROM {msg_table}
-                WHERE StrTalker = ?
-                  AND Type = 1
-                  AND CreateTime >= ?
-                  AND CreateTime < ?
-                ORDER BY CreateTime ASC
-                LIMIT ?
-                """,
-                (contact_id, start_ts, end_ts, limit),
-            )
+            if filter_date:
+                cursor.execute(
+                    f"""
+                    SELECT localId, StrTalker, CreateTime, Type, StrContent
+                    FROM {msg_table}
+                    WHERE StrTalker = ?
+                      AND Type = 1
+                      AND CreateTime >= ?
+                      AND CreateTime < ?
+                    ORDER BY CreateTime ASC
+                    LIMIT ?
+                    """,
+                    (contact_id, start_ts, end_ts, limit),
+                )
+            else:
+                cursor.execute(
+                    f"""
+                    SELECT localId, StrTalker, CreateTime, Type, StrContent
+                    FROM {msg_table}
+                    WHERE StrTalker = ?
+                      AND Type = 1
+                    ORDER BY CreateTime ASC
+                    LIMIT ?
+                    """,
+                    (contact_id, limit),
+                )
 
             for row in cursor.fetchall():
                 content = row["StrContent"] or ""

@@ -16,7 +16,7 @@ AI房产客服Agent系统原型，实现：微信聊天记录采集 → AI解析
 
 | 层 | 选型 | 理由 |
 |---|---|---|
-| LLM | Claude Sonnet 4.5 (langchain-anthropic) | 中文理解强，JSON结构化输出可靠，API已有 |
+| LLM | GLM-5 (langchain-openai) | OpenAI兼容接口，JSON结构化输出可靠 |
 | Agent框架 | LangGraph StateGraph | 条件路由灵活，对话阶段控制精确（不用create_supervisor，避免handoff额外token） |
 | 后端 | FastAPI + uvicorn (已安装) | 原生async + SSE StreamingResponse |
 | 前端 | Vue 3 + Vite + TypeScript | 轻量适合demo，Vite秒级热重载，Node 24已就绪 |
@@ -221,8 +221,8 @@ START → [parse_chat] → [validate_fields] → [output_profile] → END
 
 ### Phase 1: 后端骨架 + 数据模型 (1-2天)
 
-1. 创建项目目录，安装依赖：`langgraph langchain-anthropic langgraph-checkpoint-sqlite`
-2. `config.py` — Pydantic Settings（ANTHROPIC_API_KEY、微信路径等）
+1. 创建项目目录，安装依赖：`langgraph langchain-openai langgraph-checkpoint-sqlite`
+2. `config.py` — Pydantic Settings（LLM_API_KEY、微信路径等）
 3. `models.py` — 69字段Pydantic模型 + API request/response
 4. `db/local_store.py` — SQLite初始化 + CRUD
 5. `main.py` — FastAPI app + lifespan + 健康检查
@@ -294,7 +294,7 @@ START → [parse_chat] → [validate_fields] → [output_profile] → END
 
 | 风险 | 缓解 |
 |------|------|
-| Python 3.14与langgraph兼容性 | 安装时测试`import langgraph`，不行则创建3.12 venv |
+| Python 3.14与langgraph兼容性 | 安装时测试`import langgraph`，不行则创建3.11+ venv |
 | 微信数据库格式变化 | decrypt.py双层降级（pywxdump + AES fallback） |
 | LLM JSON输出不符合schema | validate_fields节点pydantic验证，失败重试（最多2次） |
 | dws CLI超时/认证过期 | 30秒超时 + try/except + 认证刷新提示 |

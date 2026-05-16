@@ -2,12 +2,17 @@
 
 AI房产客服系统 — 微信聊天记录提取 → AI画像解析 → 飞书/钉钉同步
 
+> 基于真实房地产业务场景开发的AI客户画像系统，从微信私聊记录中自动提取69字段客户画像并同步到办公平台。
+
 ## 功能
 
+- **Web仪表盘**：单页可视化控制台，实时监控解密/提取/解析/同步全流程
 - **微信聊天提取**：解密微信PC本地数据库，提取私聊(DM)消息记录
 - **AI画像解析**：通过LLM从聊天记录中提取69字段客户画像（结构化JSON）
 - **飞书同步**：按微信号唯一键去重，自动创建/更新飞书多维表格记录
 - **钉钉同步**：自动将客户画像创建/更新到钉钉AI表格
+- **批量扫描**：一键扫描所有联系人的聊天记录，逐个AI解析并同步
+- **定时任务**：支持 cron 定时自动执行扫描任务
 - **Agent工具层**：11个LangChain Tool，供LangGraph Agent直接调用
 - **提示词可配置**：所有AI提示词存储在独立的 `prompts.yaml` 中
 - **配置分离**：所有参数按域拆分到 `config/*.yaml`，敏感凭证放 `.env`
@@ -34,6 +39,8 @@ LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 LLM_MODEL=glm-5
 FEISHU_BASE_TOKEN=你的飞书base_token
 FEISHU_TABLE_ID=你的飞书table_id
+DINGTALK_BASE_ID=你的钉钉base_id
+DINGTALK_TABLE_ID=你的钉钉table_id
 ```
 
 非敏感参数按需修改 `config/` 下的YAML文件：
@@ -46,7 +53,22 @@ FEISHU_TABLE_ID=你的飞书table_id
 | `config/agent.yaml` | 消息提取条数、联系人显示上限 |
 | `config/paths.yaml` | 数据目录、提示词文件路径 |
 
-### 3. 运行
+### 3. 启动仪表盘
+
+```bash
+uvicorn api.server:app --reload --port 8000
+```
+
+浏览器打开 http://localhost:8000，即可使用Web仪表盘：
+
+1. **环境状态** — 自动检测微信进程、数据库、LLM接口、飞书连通性
+2. **联系人选择** — 点击解密后加载联系人列表，支持搜索和备注名优先显示
+3. **管道控制** — 选择联系人+日期范围，启动单次或全量扫描
+4. **任务监控** — 实时显示运行中任务的步骤进度，支持中途停止
+5. **工具调用日志** — 按任务筛选查看每一步的输入/输出/耗时
+6. **定时任务** — 通过弹窗创建 cron 定时扫描任务
+
+### 4. 命令行使用
 
 ```bash
 # 列出微信私聊联系人（需先登录微信PC版）
@@ -68,6 +90,17 @@ python main.py --parse-file <chat.txt>
 ## 项目结构
 
 ```
+├── api/                       # Web仪表盘（FastAPI + SSE）
+│   ├── server.py              # 应用入口 + 静态文件挂载
+│   ├── scheduler.py           # APScheduler 定时任务引擎
+│   ├── tool_logger.py         # 工具调用日志（环形缓冲区 + SSE广播）
+│   ├── routers/
+│   │   ├── workflow.py        # 管道控制（启动/停止/联系人/解密/运行记录）
+│   │   ├── scheduler_router.py# 定时任务 CRUD
+│   │   ├── health.py          # 环境健康检测
+│   │   └── logs.py            # 日志历史 + SSE 实时流
+│   └── static/
+│       └── index.html         # 单页仪表盘（HTML/CSS/JS）
 ├── config/                    # 配置文件（按域拆分）
 │   ├── llm.yaml               # LLM参数
 │   ├── wechat.yaml            # 微信数据库配置
@@ -92,6 +125,23 @@ python main.py --parse-file <chat.txt>
 ├── main.py                    # 管道入口
 └── requirements.txt
 ```
+
+## API 端点
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| `GET` | `/api/health` | 环境健康检测（微信/数据库/LLM/飞书） |
+| `POST` | `/api/workflow/start` | 启动管道（单联系人或全部） |
+| `POST` | `/api/workflow/stop` | 停止运行中的管道 |
+| `GET` | `/api/workflow/runs` | 获取所有运行记录（支持页面刷新恢复） |
+| `GET` | `/api/workflow/contacts` | 获取有消息的联系人列表 |
+| `GET` | `/api/workflow/decrypt` | 触发数据库解密 |
+| `GET` | `/api/logs/stream` | SSE 实时日志流 |
+| `GET` | `/api/logs` | 历史日志查询 |
+| `POST` | `/api/scheduler/tasks` | 创建定时任务 |
+| `GET` | `/api/scheduler/tasks` | 列出定时任务 |
+| `PATCH` | `/api/scheduler/tasks/:id` | 更新定时任务 |
+| `DELETE` | `/api/scheduler/tasks/:id` | 删除定时任务 |
 
 ## Agent工具列表
 
@@ -132,13 +182,15 @@ python main.py --parse-file <chat.txt>
 
 ## 技术栈
 
-- **LLM**: GLM-5（智谱AI，OpenAI兼容接口）
+- **LLM**: GLM-5（OpenAI兼容接口）
 - **LangChain**: langchain-openai + @tool
+- **Web**: FastAPI + Uvicorn + SSE
 - **微信解密**: PyWxDump
 - **飞书同步**: lark-cli
 - **钉钉同步**: dws CLI
+- **定时任务**: APScheduler
 - **Python**: 3.11+
 
 ## License
 
-Private
+MIT

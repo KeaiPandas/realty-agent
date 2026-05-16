@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Realty Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Noto+Sans+SC:wght@400;500;600&family=Source+Code+Pro:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #1a1614;
+  --bg-panel: #252220;
+  --bg-card: #332e2b;
+  --bg-hover: #3d3835;
+  --border: #3d3835;
+  --border-hover: #6b5b4e;
+  --text: #e8ddd4;
+  --text-dim: #9c8e82;
+  --amber: #e8a849;
+  --green: #7dba6e;
+  --coral: #d4735e;
+  --blue: #7ba5b5;
+  --shadow: 0 2px 12px rgba(232,168,73,0.06);
+  --radius: 10px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.app { position: relative; z-index: 1; max-width: 1440px; margin: 0 auto; padding: 24px 32px; }
+
+/* ── Header ── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 20px; margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+header h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px; font-weight: 700; letter-spacing: -0.5px;
+  color: var(--text);
+}
+header h1 span { color: var(--amber); }
+.conn-badge {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--text-dim);
+  font-family: 'Source Code Pro', monospace;
+}
+.conn-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--coral);
+  transition: background 0.3s;
+}
+.conn-dot.connected { background: var(--green); }
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px; margin-bottom: 24px;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  flex-wrap: wrap;
+}
+.toolbar input[type="date"] {
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text); border-radius: 6px;
+  padding: 8px 12px; font-size: 13px;
+  font-family: 'Source Code Pro', monospace;
+  outline: none; transition: border-color 0.2s;
+  color-scheme: dark;
+}
+.toolbar input[type="date"]:focus { border-color: var(--border-hover); }
+.date-range { display: flex; align-items: center; gap: 6px; }
+.date-range span { color: var(--text-dim); font-size: 13px; }
+
+.btn {
+  padding: 8px 20px; border-radius: 6px; font-size: 13px;
+  font-weight: 600; cursor: pointer; border: 1px solid transparent;
+  transition: all 0.2s ease; font-family: 'Noto Sans SC', sans-serif;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.btn-primary {
+  background: var(--amber); color: #1a1614; border-color: var(--amber);
+}
+.btn-primary:hover:not(:disabled) { box-shadow: 0 4px 16px rgba(232,168,73,0.25); }
+
+.btn-danger {
+  background: transparent; color: var(--coral); border-color: var(--coral);
+}
+.btn-danger:hover:not(:disabled) { background: var(--coral); color: #1a1614; }
+
+.btn-ghost {
+  background: var(--bg-card); color: var(--text-dim); border: 1px solid var(--border);
+}
+.btn-ghost:hover:not(:disabled) { border-color: var(--border-hover); color: var(--text); }
+
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+.decrypt-status {
+  font-size: 12px; color: var(--text-dim);
+  font-family: 'Source Code Pro', monospace;
+  display: flex; align-items: center; gap: 6px;
+}
+.decrypt-status.loading { color: var(--amber); }
+.decrypt-status.done { color: var(--green); }
+.decrypt-status.error { color: var(--coral); }
+
+.pipeline-status {
+  margin-left: auto;
+  font-size: 13px; color: var(--text-dim);
+  font-family: 'Source Code Pro', monospace;
+}
+
+/* ── Contact Picker ── */
+.contact-picker {
+  position: relative; min-width: 220px;
+}
+.contact-picker-input {
+  width: 100%;
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text); border-radius: 6px;
+  padding: 8px 12px 8px 32px;
+  font-size: 13px;
+  font-family: 'Source Code Pro', monospace;
+  outline: none; transition: border-color 0.2s;
+  cursor: pointer;
+}
+.contact-picker-input:focus { border-color: var(--border-hover); }
+.contact-picker-input.has-value { cursor: pointer; }
+.contact-picker-search-icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--text-dim); pointer-events: none;
+}
+.contact-picker-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+  z-index: 50; display: none; overflow: hidden;
+}
+.contact-picker-dropdown.open { display: flex; flex-direction: column; }
+.contact-picker-search {
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.contact-picker-search input {
+  width: 100%; background: transparent; border: none;
+  color: var(--text); font-size: 13px; outline: none;
+  font-family: 'Source Code Pro', monospace;
+}
+.contact-picker-search input::placeholder { color: var(--text-dim); }
+.contact-picker-list {
+  max-height: 280px; overflow-y: auto;
+  padding: 4px 0;
+}
+.contact-picker-list::-webkit-scrollbar { width: 5px; }
+.contact-picker-list::-webkit-scrollbar-track { background: transparent; }
+.contact-picker-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.contact-picker-item {
+  padding: 8px 14px; cursor: pointer;
+  transition: background 0.15s; display: flex; align-items: center; gap: 10px;
+}
+.contact-picker-item:hover { background: var(--bg-hover); }
+.contact-picker-item.selected { background: rgba(232,168,73,0.08); }
+.contact-picker-item.special {
+  border-bottom: 1px solid var(--border);
+  color: var(--amber); font-weight: 500;
+  padding: 10px 14px;
+}
+.contact-picker-item .cp-name { font-size: 13px; }
+.contact-picker-item .cp-sub {
+  font-size: 11px; color: var(--text-dim);
+  font-family: 'Source Code Pro', monospace;
+  margin-left: auto; flex-shrink: 0;
+}
+.contact-picker-empty {
+  padding: 16px; text-align: center;
+  color: var(--text-dim); font-size: 12px;
+}
+
+/* ── Main Grid ── */
+.main-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+}
+
+/* ── Panel ── */
+.panel {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.panel-header {
+  padding: 14px 20px;
+  font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.panel-body { padding: 16px 20px; }
+
+/* ── Log Cards ── */
+.log-list {
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 16px 20px;
+}
+.log-list::-webkit-scrollbar { width: 5px; }
+.log-list::-webkit-scrollbar-track { background: transparent; }
+.log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.log-card {
+  background: var(--bg-card); border-radius: 8px;
+  padding: 12px 16px; border-left: 3px solid var(--border);
+  animation: fadeSlideIn 0.3s ease;
+  transition: border-color 0.2s;
+}
+.log-card.running { border-left-color: var(--amber); }
+.log-card.success { border-left-color: var(--green); }
+.log-card.error { border-left-color: var(--coral); }
+
+.log-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.log-tool {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.log-time {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 11px; color: var(--text-dim);
+}
+.log-badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  font-family: 'Source Code Pro', monospace;
+  font-weight: 500;
+}
+.log-badge.running { background: rgba(232,168,73,0.15); color: var(--amber); }
+.log-badge.success { background: rgba(125,186,110,0.15); color: var(--green); }
+.log-badge.error { background: rgba(212,115,94,0.15); color: var(--coral); }
+
+.log-detail {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 11px; color: var(--text-dim);
+  line-height: 1.6;
+  word-break: break-all;
+}
+.log-duration {
+  font-size: 11px; color: var(--text-dim);
+  font-family: 'Source Code Pro', monospace;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Task Status ── */
+.task-tabs {
+  display: flex; gap: 0;
+}
+.task-tab {
+  background: transparent; border: none; color: var(--text-dim);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  padding: 4px 12px; border-bottom: 2px solid transparent;
+  font-family: 'Noto Sans SC', sans-serif;
+  transition: all 0.15s;
+}
+.task-tab:hover { color: var(--text); }
+.task-tab.active { color: var(--amber); border-bottom-color: var(--amber); }
+.task-tab span {
+  font-family: 'Source Code Pro', monospace; font-size: 10px;
+  background: var(--bg-card); padding: 1px 6px; border-radius: 8px;
+  margin-left: 4px;
+}
+
+.task-list {
+  max-height: 340px; overflow-y: auto;
+  padding: 12px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.task-list::-webkit-scrollbar { width: 5px; }
+.task-list::-webkit-scrollbar-track { background: transparent; }
+.task-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.task-card {
+  background: var(--bg-card); border-radius: 8px;
+  padding: 14px 16px; border-left: 3px solid var(--border);
+  animation: fadeSlideIn 0.3s ease;
+}
+.task-card.running { border-left-color: var(--amber); }
+.task-card.completed { border-left-color: var(--green); }
+.task-card.failed { border-left-color: var(--coral); }
+
+.task-card-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.task-card-title {
+  font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.task-card-title .task-contact {
+  color: var(--text);
+}
+.task-card-title .task-id {
+  color: var(--text-dim);
+  font-family: 'Source Code Pro', monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+.task-badge {
+  font-size: 10px; padding: 2px 8px; border-radius: 4px;
+  font-family: 'Source Code Pro', monospace;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.task-badge.running { background: rgba(232,168,73,0.15); color: var(--amber); }
+.task-badge.completed { background: rgba(125,186,110,0.15); color: var(--green); }
+.task-badge.failed { background: rgba(212,115,94,0.15); color: var(--coral); }
+.task-card-actions {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.btn-stop {
+  padding: 2px 10px; border-radius: 4px; font-size: 11px; font-weight: 600;
+  cursor: pointer; background: transparent; color: var(--coral);
+  border: 1px solid var(--coral); font-family: 'Noto Sans SC', sans-serif;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-stop:hover { background: var(--coral); color: #1a1614; }
+
+.task-steps {
+  display: flex; gap: 4px; margin-bottom: 8px;
+}
+.task-step-dot {
+  width: 100%; height: 4px; border-radius: 2px;
+  background: var(--border); transition: background 0.3s;
+}
+.task-step-dot.done { background: var(--green); }
+.task-step-dot.active { background: var(--amber); animation: stepPulse 1.5s ease-in-out infinite; }
+.task-step-dot.failed { background: var(--coral); }
+
+@keyframes stepPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.task-detail {
+  display: flex; gap: 16px; flex-wrap: wrap;
+}
+.task-detail-item {
+  font-size: 11px; color: var(--text-dim);
+  font-family: 'Source Code Pro', monospace;
+  display: flex; align-items: center; gap: 4px;
+}
+.task-detail-item .label { color: var(--text-dim); }
+.task-detail-item .value { color: var(--text); }
+
+.task-card-msg {
+  font-size: 11px; color: var(--text-dim);
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.task-empty {
+  text-align: center; padding: 30px 20px;
+  color: var(--text-dim); font-size: 13px;
+}
+
+/* ── Health Cards ── */
+.health-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.health-card {
+  background: var(--bg-card); border-radius: 8px;
+  padding: 14px 16px;
+  display: flex; align-items: center; gap: 12px;
+  animation: fadeSlideIn 0.4s ease backwards;
+  border: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+.health-card:hover { border-color: var(--border-hover); }
+.health-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+}
+.health-card.ok .health-icon { background: rgba(125,186,110,0.15); }
+.health-card.error .health-icon { background: rgba(212,115,94,0.15); }
+.health-card.ok .health-icon::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.health-card.error .health-icon::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--coral); }
+.health-name { font-size: 13px; font-weight: 500; }
+.health-msg { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* ── Scheduler ── */
+.sched-empty {
+  text-align: center; padding: 20px;
+  color: var(--text-dim); font-size: 13px;
+}
+.sched-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-radius: 8px;
+  background: var(--bg-card); margin-bottom: 8px;
+  border: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+.sched-item:hover { border-color: var(--border-hover); }
+.sched-info { flex: 1; min-width: 0; }
+.sched-name {
+  font-size: 13px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sched-desc {
+  font-size: 11px; color: var(--text-dim);
+  font-family: 'Source Code Pro', monospace;
+  margin-top: 3px;
+}
+.sched-actions {
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+}
+
+.toggle {
+  position: relative; width: 36px; height: 20px;
+  background: var(--border); border-radius: 10px;
+  cursor: pointer; transition: background 0.2s;
+  flex-shrink: 0;
+}
+.toggle.on { background: var(--green); }
+.toggle::after {
+  content: '';
+  position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--text); transition: left 0.2s;
+}
+.toggle.on::after { left: 18px; }
+
+/* ── Modal ── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+.modal {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  width: 520px; max-width: 95vw;
+  animation: slideUp 0.25s ease;
+  max-height: 90vh; overflow-y: auto;
+}
+.modal-header {
+  padding: 20px 24px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 18px; font-weight: 700;
+}
+.modal-close {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text-dim); cursor: pointer;
+  font-size: 16px; display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.modal-close:hover { border-color: var(--border-hover); color: var(--text); }
+.modal-body { padding: 20px 24px; }
+.modal-footer {
+  padding: 16px 24px 20px;
+  display: flex; justify-content: flex-end; gap: 10px;
+  border-top: 1px solid var(--border);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Form ── */
+.form-group { margin-bottom: 18px; }
+.form-label {
+  display: block; font-size: 12px; font-weight: 600;
+  color: var(--text-dim); text-transform: uppercase;
+  letter-spacing: 0.5px; margin-bottom: 8px;
+}
+.form-input, .form-select {
+  width: 100%;
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text); border-radius: 8px;
+  padding: 10px 14px; font-size: 13px;
+  font-family: 'Source Code Pro', monospace;
+  outline: none; transition: border-color 0.2s;
+  color-scheme: dark;
+}
+.form-input:focus, .form-select:focus { border-color: var(--amber); }
+
+.form-row { display: flex; gap: 12px; }
+.form-row .form-group { flex: 1; }
+
+.radio-group { display: flex; flex-direction: column; gap: 8px; }
+.radio-label {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 8px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  cursor: pointer; transition: all 0.2s;
+  font-size: 13px;
+}
+.radio-label:hover { border-color: var(--border-hover); }
+.radio-label.checked { border-color: var(--amber); background: rgba(232,168,73,0.06); }
+.radio-label input { display: none; }
+.radio-dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--border); flex-shrink: 0;
+  position: relative; transition: border-color 0.2s;
+}
+.radio-label.checked .radio-dot { border-color: var(--amber); }
+.radio-label.checked .radio-dot::after {
+  content: ''; position: absolute;
+  top: 3px; left: 3px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--amber);
+}
+
+.date-fields { display: none; margin-top: 10px; }
+.date-fields.visible { display: flex; }
+
+/* ── Empty State ── */
+.empty {
+  text-align: center; padding: 40px 20px;
+  color: var(--text-dim); font-size: 13px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .main-grid { grid-template-columns: 1fr; }
+  .health-grid { grid-template-columns: 1fr; }
+  .app { padding: 16px; }
+  .toolbar { gap: 8px; }
+  .contact-picker { min-width: 180px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <h1>Realty <span>Agent</span></h1>
+    <div class="conn-badge">
+      <div class="conn-dot" id="connDot"></div>
+      <span id="connText">connecting...</span>
+    </div>
+  </header>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <button class="btn btn-ghost" id="btnDecrypt" onclick="decryptDB()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      解密数据库
+    </button>
+    <span class="decrypt-status" id="decryptStatus"></span>
+
+    <!-- Contact Picker -->
+    <div class="contact-picker" id="contactPicker">
+      <svg class="contact-picker-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" class="contact-picker-input" id="cpInput" placeholder="搜索联系人..." readonly onclick="toggleContactPicker()">
+      <div class="contact-picker-dropdown" id="cpDropdown">
+        <div class="contact-picker-search">
+          <input type="text" id="cpSearch" placeholder="输入姓名或备注搜索..." oninput="filterContacts()">
+        </div>
+        <div class="contact-picker-list" id="cpList"></div>
+      </div>
+    </div>
+
+    <div class="date-range">
+      <input type="date" id="dateStart" title="开始日期">
+      <span>~</span>
+      <input type="date" id="dateEnd" title="结束日期">
+    </div>
+    <label style="font-size:13px;color:var(--text-dim);display:flex;align-items:center;gap:6px">
+      <input type="checkbox" id="chkParseOnly"> 仅解析
+    </label>
+    <button class="btn btn-primary" id="btnStart" onclick="startPipeline()">启动管道</button>
+    <div class="pipeline-status" id="pipelineStatus"></div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="main-grid">
+
+    <!-- Left: Logs -->
+    <div class="panel" style="min-height:400px">
+      <div class="panel-header">
+        <span>工具调用日志</span>
+        <span id="logCount" style="font-family:'Source Code Pro',monospace;color:var(--amber)">0</span>
+      </div>
+      <div class="log-list" id="logList">
+        <div class="empty">等待管道启动...</div>
+      </div>
+    </div>
+
+    <!-- Right Column -->
+    <div style="display:flex;flex-direction:column;gap:20px">
+
+      <!-- Task Status -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="task-tabs">
+            <button class="task-tab active" onclick="switchTaskTab('running',this)">运行中 <span id="taskRunningCount">0</span></button>
+            <button class="task-tab" onclick="switchTaskTab('history',this)">历史 <span id="taskHistoryCount">0</span></button>
+          </div>
+        </div>
+        <div class="task-list" id="taskList">
+          <div class="task-empty">暂无任务运行</div>
+        </div>
+      </div>
+
+      <!-- Health -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>环境状态</span>
+          <button class="btn btn-sm btn-ghost" onclick="refreshHealth()">刷新</button>
+        </div>
+        <div class="panel-body">
+          <div class="health-grid" id="healthGrid"></div>
+        </div>
+      </div>
+
+      <!-- Scheduler -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>定时任务</span>
+          <button class="btn btn-sm btn-primary" onclick="openTaskModal()">新建任务</button>
+        </div>
+        <div class="panel-body">
+          <div id="schedList">
+            <div class="sched-empty">暂无定时任务，点击「新建任务」创建</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Task Modal (hidden) -->
+<div class="modal-overlay" id="taskModal" style="display:none" onclick="if(event.target===this)closeTaskModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">新建定时任务</span>
+      <button class="modal-close" onclick="closeTaskModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">任务名称</label>
+        <input type="text" class="form-input" id="mTaskName" placeholder="如：每日客户扫描">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">执行时间</label>
+          <input type="time" class="form-input" id="mTime" value="22:30">
+        </div>
+        <div class="form-group">
+          <label class="form-label">重复频率</label>
+          <select class="form-select" id="mFreq">
+            <option value="daily">每天</option>
+            <option value="weekday">工作日</option>
+            <option value="custom">自定义 Cron</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" id="mCronGroup" style="display:none">
+        <label class="form-label">Cron 表达式</label>
+        <input type="text" class="form-input" id="mCron" placeholder="30 22 * * *">
+      </div>
+      <div class="form-group">
+        <label class="form-label">扫描联系人</label>
+        <select class="form-select" id="mContact"><option value="">加载中...</option></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">扫描范围</label>
+        <div class="radio-group" id="scanModeGroup">
+          <label class="radio-label checked" onclick="selectScanMode('today', this)">
+            <input type="radio" name="scanMode" value="today" checked>
+            <div class="radio-dot"></div>
+            <span>今天新增的聊天记录</span>
+          </label>
+          <label class="radio-label" onclick="selectScanMode('range', this)">
+            <input type="radio" name="scanMode" value="range">
+            <div class="radio-dot"></div>
+            <span>自定义时间段</span>
+          </label>
+          <label class="radio-label" onclick="selectScanMode('all', this)">
+            <input type="radio" name="scanMode" value="all">
+            <div class="radio-dot"></div>
+            <span>全部聊天记录</span>
+          </label>
+        </div>
+        <div class="date-fields" id="mDateFields">
+          <div style="display:flex;gap:10px;width:100%">
+            <input type="date" class="form-input" id="mDateStart" style="flex:1" placeholder="开始日期">
+            <input type="date" class="form-input" id="mDateEnd" style="flex:1" placeholder="结束日期">
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+          <div class="toggle on" id="mEnabled" onclick="this.classList.toggle('on')"></div>
+          创建后立即启用
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeTaskModal()">取消</button>
+      <button class="btn btn-primary" onclick="submitTask()">创建任务</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let evtSource = null;
+let currentRunId = null;
+let selectedRunId = null;
+let currentTaskTab = 'running';
+let logs = [];
+let contactsList = [];
+let selectedContactId = '';
+let selectedContactName = '';
+let cpOpen = false;
+
+// ── Run Tracking ──
+const STEPS = ['decrypt_db', 'extract_dm', 'parse_profile', 'sync_feishu'];
+const STEP_LABELS = { decrypt_db: '解密', extract_dm: '提取', parse_profile: '解析', sync_feishu: '同步' };
+let pipelineRuns = {};
+
+// ── SSE Connection ──
+function connectSSE() {
+  evtSource = new EventSource(API + '/api/logs/stream');
+  evtSource.onopen = () => {
+    document.getElementById('connDot').classList.add('connected');
+    document.getElementById('connText').textContent = 'connected';
+  };
+  evtSource.onerror = () => {
+    document.getElementById('connDot').classList.remove('connected');
+    document.getElementById('connText').textContent = 'reconnecting...';
+  };
+  evtSource.onmessage = (e) => {
+    handleEvent(JSON.parse(e.data));
+  };
+}
+
+function handleEvent(data) {
+  // Always store logs with run_id
+  if (data.type === 'tool_start' || data.type === 'pipeline_start') {
+    addLogCard(data);
+  }
+  if (data.type === 'tool_end' || data.type === 'tool_error') {
+    updateLogCard(data);
+  }
+  if (data.type === 'pipeline_progress') {
+    addLogCard({
+      id: 'prog-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      tool: 'pipeline_progress',
+      run_id: data.run_id || currentRunId || '',
+      status: 'running',
+      input: data.message || '',
+      timestamp: data.timestamp || '',
+    });
+  }
+  if (data.type === 'pipeline_end') {
+    addLogCard({
+      id: 'pipe-end-' + (data.run_id || currentRunId || ''),
+      tool: 'pipeline_end',
+      run_id: data.run_id || currentRunId || '',
+      status: data.status === 'failed' ? 'error' : 'success',
+      output: data.message || data.error || (data.status === 'failed' ? '失败' : '完成'),
+      timestamp: data.timestamp || '',
+    });
+  }
+
+  if (data.type === 'pipeline_start') {
+    currentRunId = data.run_id;
+    selectedRunId = data.run_id;
+    const contactName = data.contact_id === '__all__' ? '所有人' : getContactName(data.contact_id);
+    pipelineRuns[data.run_id] = {
+      id: data.run_id,
+      contact: data.contact_id,
+      contact_name: contactName,
+      status: 'running',
+      steps: {},
+      startTime: data.timestamp || new Date().toLocaleString('zh-CN'),
+      endTime: '',
+      error: '',
+      message: '',
+      stepOutputs: {},
+    };
+    setPipelineRunning(true, data.contact_id);
+    renderTaskList();
+    filterLogs();
+  }
+  if (data.type === 'tool_start' && currentRunId && pipelineRuns[currentRunId]) {
+    pipelineRuns[currentRunId].steps[data.tool] = 'active';
+    pipelineRuns[currentRunId].stepOutputs[data.tool] = data.input || '';
+    renderTaskList();
+  }
+  if (data.type === 'tool_end' && currentRunId && pipelineRuns[currentRunId]) {
+    pipelineRuns[currentRunId].steps[data.tool] = 'done';
+    pipelineRuns[currentRunId].stepOutputs[data.tool] = data.output || '';
+    renderTaskList();
+  }
+  if (data.type === 'tool_error' && currentRunId && pipelineRuns[currentRunId]) {
+    pipelineRuns[currentRunId].steps[data.tool] = 'failed';
+    pipelineRuns[currentRunId].stepOutputs[data.tool] = data.error || '';
+    renderTaskList();
+  }
+  if (data.type === 'pipeline_end') {
+    if (currentRunId && pipelineRuns[currentRunId]) {
+      const run = pipelineRuns[currentRunId];
+      run.status = data.status === 'failed' ? 'failed' : 'completed';
+      run.endTime = new Date().toLocaleString('zh-CN');
+      run.error = data.error || '';
+      run.message = data.message || '';
+    }
+    setPipelineRunning(false);
+    renderTaskList();
+  }
+  if (data.type === 'pipeline_progress') {
+    if (currentRunId && pipelineRuns[currentRunId]) {
+      pipelineRuns[currentRunId].message = data.message || '';
+      renderTaskList();
+    }
+  }
+}
+
+// ── Task List Rendering ──
+function switchTaskTab(tab, el) {
+  currentTaskTab = tab;
+  document.querySelectorAll('.task-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderTaskList();
+}
+
+function renderTaskList() {
+  const container = document.getElementById('taskList');
+  const allRuns = Object.values(pipelineRuns).reverse();
+  const running = allRuns.filter(r => r.status === 'running');
+  const history = allRuns.filter(r => r.status !== 'running');
+
+  // Update tab counts
+  document.getElementById('taskRunningCount').textContent = running.length;
+  document.getElementById('taskHistoryCount').textContent = history.length;
+
+  const display = currentTaskTab === 'running' ? running : history;
+
+  if (display.length === 0) {
+    const msg = currentTaskTab === 'running' ? '暂无运行中的任务' : '暂无历史任务';
+    container.innerHTML = '<div class="task-empty">' + msg + '</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  display.forEach(run => {
+    const card = document.createElement('div');
+    card.className = 'task-card ' + run.status;
+    if (run.id === selectedRunId) card.className += ' selected';
+    card.style.cursor = 'pointer';
+    card.setAttribute('data-run-id', run.id);
+    card.onclick = (e) => {
+      if (e.target.tagName === 'BUTTON') return;
+      selectRun(run.id);
+    };
+
+    let contactDisplay = run.contact_name || '';
+    if (!contactDisplay) {
+      contactDisplay = run.contact === '__all__' ? '所有人' : getContactName(run.contact);
+    }
+
+    let stepsHtml = '<div class="task-steps">';
+    STEPS.forEach(step => {
+      const state = run.steps[step] || '';
+      stepsHtml += '<div class="task-step-dot ' + state + '" title="' + STEP_LABELS[step] + '"></div>';
+    });
+    stepsHtml += '</div>';
+
+    let detailsHtml = '';
+    const doneSteps = STEPS.filter(s => run.steps[s] === 'done' && run.stepOutputs && run.stepOutputs[s]);
+    if (doneSteps.length > 0) {
+      detailsHtml += '<div class="task-detail-item"><span class="value">' + escHtml(run.stepOutputs[doneSteps[doneSteps.length - 1]]) + '</span></div>';
+    }
+    const activeStep = STEPS.find(s => run.steps[s] === 'active');
+    if (activeStep) {
+      detailsHtml += '<div class="task-detail-item"><span class="label">当前:</span><span class="value">' + STEP_LABELS[activeStep] + '</span></div>';
+    }
+    // Show time info for history tasks
+    if (currentTaskTab === 'history') {
+      if (run.startTime) detailsHtml += '<div class="task-detail-item"><span class="label">开始:</span><span class="value">' + escHtml(run.startTime) + '</span></div>';
+      if (run.endTime) detailsHtml += '<div class="task-detail-item"><span class="label">结束:</span><span class="value">' + escHtml(run.endTime) + '</span></div>';
+    }
+
+    let msgHtml = '';
+    if (run.status === 'running' && run.message) {
+      msgHtml = '<div class="task-card-msg">' + escHtml(run.message) + '</div>';
+    } else if (run.status === 'completed') {
+      msgHtml = '<div class="task-card-msg">' + escHtml(run.message || '已完成') + '</div>';
+    } else if (run.status === 'failed') {
+      msgHtml = '<div class="task-card-msg" style="color:var(--coral)">' + escHtml(run.error || '未知错误') + '</div>';
+    }
+
+    const badgeLabel = run.status === 'running' ? '运行中' : run.status === 'completed' ? '完成' : '失败';
+
+    card.innerHTML =
+      '<div class="task-card-top">' +
+        '<div class="task-card-title">' +
+          '<span class="task-contact">' + escHtml(contactDisplay) + '</span>' +
+          '<span class="task-id">#' + run.id + '</span>' +
+        '</div>' +
+        '<div class="task-card-actions">' +
+          '<span class="task-badge ' + run.status + '">' + badgeLabel + '</span>' +
+          (run.status === 'running' ? '<button class="btn-stop" onclick="event.stopPropagation();stopRun(\'' + run.id + '\')">停止</button>' : '') +
+        '</div>' +
+      '</div>' +
+      stepsHtml +
+      '<div class="task-detail">' + detailsHtml + '</div>' +
+      msgHtml;
+
+    container.appendChild(card);
+  });
+}
+
+function selectRun(runId) {
+  selectedRunId = runId;
+  renderTaskList();
+  filterLogs();
+}
+
+// ── Log Cards (with run_id tracking) ──
+const STEP_NAMES = {
+  decrypt_db: '解密数据库',
+  extract_dm: '提取聊天记录',
+  parse_profile: 'AI 画像解析',
+  sync_feishu: '同步飞书',
+  pipeline_start: '管道启动',
+  pipeline_end: '管道结束',
+  pipeline_progress: '处理进度',
+};
+const renderedLogIds = new Set();
+
+function addLogCard(data) {
+  const list = document.getElementById('logList');
+  const id = data.id || 'sys-' + Date.now();
+  if (renderedLogIds.has(id)) return;
+  renderedLogIds.add(id);
+  if (list.querySelector('.empty')) list.innerHTML = '';
+  const name = STEP_NAMES[data.tool] || data.tool || '系统';
+  const runId = data.run_id || '';
+  const statusCls = data.status === 'error' ? 'error' : data.status === 'success' ? 'success' : 'running';
+  const statusLabel = data.status === 'error' ? '失败' : data.status === 'success' ? '成功' : '运行中';
+  const card = document.createElement('div');
+  card.className = 'log-card ' + statusCls;
+  card.id = 'log-' + id;
+  card.setAttribute('data-log-run', runId);
+  card.style.display = (!selectedRunId || runId === selectedRunId) ? '' : 'none';
+  let html =
+    '<div class="log-top">' +
+      '<span class="log-tool">' + name + '</span>' +
+      '<span class="log-badge ' + statusCls + '">' + statusLabel + '</span>' +
+    '</div>' +
+    '<div class="log-detail">' + escHtml(data.output || data.error || data.input || data.contact_id || data.message || '') + '</div>' +
+    '<div class="log-time">' + (data.timestamp || '') + '</div>';
+  if (data.duration_ms) html += '<div class="log-duration">' + data.duration_ms + 'ms</div>';
+  card.innerHTML = html;
+  if (data.error) card.querySelector('.log-detail').style.color = 'var(--coral)';
+  list.prepend(card);
+  logs.push({id, runId});
+  _updateLogCount();
+}
+
+function _updateLogCount() {
+  let visible = 0;
+  document.querySelectorAll('#logList .log-card').forEach(c => { if (c.style.display !== 'none') visible++; });
+  document.getElementById('logCount').textContent = visible;
+}
+
+function updateLogCard(data) {
+  const card = document.getElementById('log-' + data.id);
+  if (!card) return;
+  const status = data.status;
+  const label = status === 'success' ? '成功' : '失败';
+  card.className = 'log-card ' + status;
+  card.querySelector('.log-badge').className = 'log-badge ' + status;
+  card.querySelector('.log-badge').textContent = label;
+  if (data.duration_ms) {
+    const dur = document.createElement('div');
+    dur.className = 'log-duration';
+    dur.textContent = data.duration_ms + 'ms';
+    card.appendChild(dur);
+  }
+  if (data.output) card.querySelector('.log-detail').textContent = data.output;
+  if (data.error) {
+    card.querySelector('.log-detail').textContent = data.error;
+    card.querySelector('.log-detail').style.color = 'var(--coral)';
+  }
+}
+
+function addSystemLog(msg, status) {
+  const list = document.getElementById('logList');
+  const card = document.createElement('div');
+  card.className = 'log-card ' + status;
+  card.setAttribute('data-log-run', currentRunId || '');
+  card.style.display = (!selectedRunId || (currentRunId || '') === selectedRunId) ? '' : 'none';
+  card.innerHTML =
+    '<div class="log-top">' +
+      '<span class="log-tool" style="color:var(--text-dim)">系统</span>' +
+      '<span class="log-badge ' + status + '">' + (status === 'error' ? '失败' : status === 'running' ? '进行中' : '完成') + '</span>' +
+    '</div>' +
+    '<div class="log-detail">' + msg + '</div>' +
+    '<div class="log-time">' + new Date().toLocaleString('zh-CN') + '</div>';
+  list.prepend(card);
+}
+
+function filterLogs() {
+  document.querySelectorAll('#logList .log-card').forEach(card => {
+    const runId = card.getAttribute('data-log-run') || '';
+    card.style.display = (!selectedRunId || runId === selectedRunId) ? '' : 'none';
+  });
+  _updateLogCount();
+}
+
+// ── Load historical logs from backend ──
+async function loadHistoricalLogs() {
+  try {
+    const resp = await fetch(API + '/api/logs?limit=200');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.entries || data.entries.length === 0) return;
+    const entries = data.entries;
+    // Render oldest first so prepend gives correct order
+    entries.forEach(entry => {
+      if (entry.type === 'tool_start' || entry.type === 'tool_end' || entry.type === 'tool_error') {
+        addLogCard(entry);
+      }
+      if (entry.type === 'pipeline_start') {
+        addLogCard({
+          id: 'pipe-' + entry.run_id,
+          tool: 'pipeline_start',
+          run_id: entry.run_id,
+          status: 'success',
+          input: '启动: ' + (entry.contact_id === '__all__' ? '所有人' : entry.contact_id),
+          timestamp: entry.timestamp,
+        });
+      }
+      if (entry.type === 'pipeline_end') {
+        addLogCard({
+          id: 'pipe-end-' + entry.run_id,
+          tool: 'pipeline_end',
+          run_id: entry.run_id,
+          status: entry.status === 'failed' ? 'error' : 'success',
+          output: entry.message || entry.error || (entry.status === 'failed' ? '失败' : '完成'),
+          timestamp: entry.timestamp,
+        });
+      }
+      if (entry.type === 'pipeline_progress') {
+        addLogCard({
+          id: 'prog-' + entry.timestamp + '-' + Math.random().toString(36).slice(2, 6),
+          tool: 'pipeline_progress',
+          run_id: entry.run_id || '',
+          status: 'running',
+          input: entry.message || '',
+          timestamp: entry.timestamp,
+        });
+      }
+    });
+    filterLogs();
+  } catch (e) {
+    console.warn('加载历史日志失败', e);
+  }
+}
+
+// ── Pipeline Control ──
+function setPipelineRunning(running, contactId) {
+  document.getElementById('btnStart').disabled = running;
+  const statusEl = document.getElementById('pipelineStatus');
+  if (running) {
+    statusEl.textContent = '运行中: ' + (contactId === '__all__' ? '所有人' : (contactId || ''));
+    statusEl.style.color = 'var(--amber)';
+  } else {
+    statusEl.textContent = '';
+  }
+}
+
+async function startPipeline() {
+  if (!selectedContactId) { alert('请先选择联系人'); return; }
+  const dateStart = document.getElementById('dateStart').value || null;
+  const dateEnd = document.getElementById('dateEnd').value || null;
+  const parseOnly = document.getElementById('chkParseOnly').checked;
+  try {
+    const resp = await fetch(API + '/api/workflow/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        contact_id: selectedContactId,
+        date_start: dateStart,
+        date_end: dateEnd,
+        parse_only: parseOnly,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { alert(data.detail || '启动失败'); return; }
+    // Immediately create run entry so stop button renders without waiting for SSE
+    const rid = data.run_id;
+    currentRunId = rid;
+    selectedRunId = rid;
+    const contactName = selectedContactId === '__all__' ? '所有人' : selectedContactName;
+    pipelineRuns[rid] = {
+      id: rid, contact: selectedContactId, contact_name: contactName,
+      status: 'running', steps: {},
+      startTime: new Date().toLocaleString('zh-CN'),
+      endTime: '', error: '', message: '启动中...', stepOutputs: {},
+    };
+    setPipelineRunning(true, selectedContactId);
+    renderTaskList();
+    filterLogs();
+  } catch (e) {
+    alert('请求失败: ' + e.message);
+  }
+}
+
+async function stopRun(runId) {
+  try {
+    const resp = await fetch(API + '/api/workflow/stop', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({run_id: runId}),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      console.warn('停止响应:', err.detail || resp.status);
+    }
+  } catch (e) { /* ignore */ }
+  if (pipelineRuns[runId]) {
+    pipelineRuns[runId].status = 'completed';
+    pipelineRuns[runId].message = '已停止';
+    pipelineRuns[runId].endTime = new Date().toLocaleString('zh-CN');
+  }
+  if (runId === currentRunId) {
+    currentRunId = null;
+    setPipelineRunning(false);
+  }
+  renderTaskList();
+}
+
+async function loadRuns() {
+  try {
+    const resp = await fetch(API + '/api/workflow/runs');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.runs && data.runs.length > 0) {
+      data.runs.forEach(run => {
+        // Don't overwrite SSE-tracked data that is fresher
+        if (!pipelineRuns[run.id] || pipelineRuns[run.id].status !== 'running') {
+          pipelineRuns[run.id] = run;
+        }
+      });
+      const active = data.runs.find(r => r.status === 'running');
+      if (active) {
+        currentRunId = active.id;
+        selectedRunId = active.id;
+        setPipelineRunning(true, active.contact);
+      } else {
+        // Select the latest run by default
+        selectedRunId = data.runs[0].id;
+      }
+      renderTaskList();
+    }
+  } catch (e) {
+    console.warn('加载运行记录失败', e);
+  }
+}
+
+// ── Decrypt & Contacts ──
+async function decryptDB() {
+  const btn = document.getElementById('btnDecrypt');
+  const status = document.getElementById('decryptStatus');
+  btn.disabled = true;
+  status.className = 'decrypt-status loading';
+  status.textContent = '解密中...';
+  try {
+    const resp = await fetch(API + '/api/workflow/decrypt');
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      status.className = 'decrypt-status done';
+      status.textContent = '已解密 ' + data.databases.length + ' 个库';
+      await loadContacts();
+    } else {
+      status.className = 'decrypt-status error';
+      status.textContent = '解密失败: ' + (data.message || '');
+    }
+  } catch (e) {
+    status.className = 'decrypt-status error';
+    status.textContent = '请求失败';
+  }
+  btn.disabled = false;
+}
+
+async function loadContacts() {
+  const cpInput = document.getElementById('cpInput');
+  cpInput.value = '加载中...';
+  try {
+    const resp = await fetch(API + '/api/workflow/contacts');
+    if (!resp.ok) {
+      cpInput.value = '加载失败';
+      return;
+    }
+    contactsList = await resp.json();
+    cpInput.value = '';
+    cpInput.placeholder = '搜索联系人...';
+    cpInput.readOnly = false;
+  } catch (e) {
+    cpInput.value = '网络错误';
+  }
+}
+
+// ── Contact Picker ──
+function getDisplayName(c) {
+  if (c.alias && c.alias.trim()) return c.alias;
+  if (c.nickname && c.nickname.trim()) return c.nickname;
+  return c.wxid;
+}
+
+function getSecondaryName(c) {
+  const parts = [];
+  if (c.alias && c.alias.trim() && c.nickname && c.nickname.trim()) parts.push(c.nickname);
+  return parts.join(' · ');
+}
+
+function toggleContactPicker() {
+  cpOpen ? closeContactPicker() : openContactPicker();
+}
+
+function openContactPicker() {
+  cpOpen = true;
+  document.getElementById('cpDropdown').classList.add('open');
+  const searchInput = document.getElementById('cpSearch');
+  searchInput.value = '';
+  renderContactList(contactsList);
+  setTimeout(() => searchInput.focus(), 50);
+}
+
+function closeContactPicker() {
+  cpOpen = false;
+  document.getElementById('cpDropdown').classList.remove('open');
+}
+
+function renderContactList(contacts) {
+  const list = document.getElementById('cpList');
+  list.innerHTML = '';
+  const allItem = document.createElement('div');
+  allItem.className = 'contact-picker-item special' + (selectedContactId === '__all__' ? ' selected' : '');
+  allItem.innerHTML = '<span class="cp-name">所有人</span><span class="cp-sub">' + contacts.length + ' 个联系人</span>';
+  allItem.onclick = () => selectContact('__all__', '所有人');
+  list.appendChild(allItem);
+  if (contacts.length === 0) {
+    list.innerHTML += '<div class="contact-picker-empty">无匹配联系人</div>';
+    return;
+  }
+  contacts.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'contact-picker-item' + (selectedContactId === c.wxid ? ' selected' : '');
+    const primary = getDisplayName(c);
+    const secondary = getSecondaryName(c);
+    item.innerHTML = '<span class="cp-name">' + escHtml(primary) + '</span>' +
+      (secondary ? '<span class="cp-sub">' + escHtml(secondary) + '</span>' : '');
+    item.onclick = () => selectContact(c.wxid, primary);
+    list.appendChild(item);
+  });
+}
+
+function filterContacts() {
+  const query = document.getElementById('cpSearch').value.trim().toLowerCase();
+  if (!query) { renderContactList(contactsList); return; }
+  renderContactList(contactsList.filter(c => {
+    const d = getDisplayName(c).toLowerCase();
+    const s = getSecondaryName(c).toLowerCase();
+    const w = c.wxid.toLowerCase();
+    return d.includes(query) || s.includes(query) || w.includes(query);
+  }));
+}
+
+function selectContact(wxid, name) {
+  selectedContactId = wxid;
+  selectedContactName = name;
+  const cpInput = document.getElementById('cpInput');
+  cpInput.value = wxid === '__all__' ? '所有人' : name;
+  cpInput.classList.add('has-value');
+  closeContactPicker();
+}
+
+function escHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('contactPicker');
+  if (cpOpen && !picker.contains(e.target)) closeContactPicker();
+});
+
+// ── Health ──
+async function refreshHealth() {
+  const names = { wechat_process: '微信进程', wechat_db: '微信数据库', feishu: '飞书同步', llm: 'LLM 接口' };
+  try {
+    const resp = await fetch(API + '/api/health');
+    const data = await resp.json();
+    const grid = document.getElementById('healthGrid');
+    grid.innerHTML = '';
+    Object.entries(data.checks).forEach(([key, check], i) => {
+      const card = document.createElement('div');
+      card.className = 'health-card ' + check.status;
+      card.style.animationDelay = i * 0.1 + 's';
+      card.innerHTML = '<div class="health-icon"></div><div><div class="health-name">' + (names[key] || key) + '</div><div class="health-msg">' + check.message + '</div></div>';
+      grid.appendChild(card);
+    });
+  } catch (e) { console.warn('健康检查失败', e); }
+}
+
+// ── Scheduler ──
+function openTaskModal() {
+  document.getElementById('taskModal').style.display = 'flex';
+  populateModalContacts();
+  document.getElementById('mTaskName').value = '';
+  document.getElementById('mTime').value = '22:30';
+  document.getElementById('mFreq').value = 'daily';
+  document.getElementById('mCronGroup').style.display = 'none';
+  document.getElementById('mCron').value = '';
+  document.getElementById('mDateFields').classList.remove('visible');
+  selectScanMode('today', document.querySelector('#scanModeGroup .radio-label'));
+  document.getElementById('mEnabled').classList.add('on');
+  document.getElementById('mTaskName').focus();
+}
+
+function closeTaskModal() { document.getElementById('taskModal').style.display = 'none'; }
+
+function selectScanMode(mode, el) {
+  document.querySelectorAll('#scanModeGroup .radio-label').forEach(l => l.classList.remove('checked'));
+  el.classList.add('checked');
+  el.querySelector('input').checked = true;
+  document.getElementById('mDateFields').classList.toggle('visible', mode === 'range');
+}
+
+function populateModalContacts() {
+  const sel = document.getElementById('mContact');
+  sel.innerHTML = '';
+  if (contactsList.length === 0) { sel.innerHTML = '<option value="">请先解密并加载联系人</option>'; return; }
+  sel.innerHTML = '<option value="__all__">所有人</option>';
+  contactsList.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.wxid;
+    opt.textContent = getDisplayName(c) + (getSecondaryName(c) ? ' (' + getSecondaryName(c) + ')' : '');
+    sel.appendChild(opt);
+  });
+}
+
+document.getElementById('mFreq').addEventListener('change', function() {
+  document.getElementById('mCronGroup').style.display = this.value === 'custom' ? 'block' : 'none';
+});
+
+function buildCronFromInputs() {
+  const freq = document.getElementById('mFreq').value;
+  const time = document.getElementById('mTime').value || '22:30';
+  const [h, m] = time.split(':');
+  if (freq === 'custom') return document.getElementById('mCron').value.trim() || (m + ' ' + h + ' * * *');
+  if (freq === 'weekday') return m + ' ' + h + ' * * 1-5';
+  return m + ' ' + h + ' * * *';
+}
+
+async function submitTask() {
+  const name = document.getElementById('mTaskName').value.trim() || ('task_' + Date.now());
+  const contactId = document.getElementById('mContact').value;
+  if (!contactId) { alert('请选择联系人'); return; }
+  const enabled = document.getElementById('mEnabled').classList.contains('on');
+  const scanMode = document.querySelector('#scanModeGroup input:checked').value;
+  let dateStart = '', dateEnd = '';
+  if (scanMode === 'range') {
+    dateStart = document.getElementById('mDateStart').value || '';
+    dateEnd = document.getElementById('mDateEnd').value || '';
+    if (!dateStart || !dateEnd) { alert('请选择日期范围'); return; }
+  }
+  try {
+    const resp = await fetch(API + '/api/scheduler/tasks', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ task_id: name, cron: buildCronFromInputs(), contact_id: contactId, date_start: dateStart, date_end: dateEnd, scan_mode: scanMode, enabled: enabled }),
+    });
+    if (!resp.ok) { alert((await resp.json().catch(() => ({})).detail) || '创建失败'); return; }
+    closeTaskModal();
+    loadTasks();
+  } catch (e) { alert('请求失败: ' + e.message); }
+}
+
+async function loadTasks() {
+  try {
+    const data = await (await fetch(API + '/api/scheduler/tasks')).json();
+    const list = document.getElementById('schedList');
+    list.innerHTML = '';
+    const tasks = data.tasks || {};
+    if (Object.keys(tasks).length === 0) { list.innerHTML = '<div class="sched-empty">暂无定时任务，点击「新建任务」创建</div>'; return; }
+    Object.entries(tasks).forEach(([id, task]) => {
+      const contactName = task.contact_id === '__all__' ? '所有人' : getContactName(task.contact_id);
+      const item = document.createElement('div');
+      item.className = 'sched-item';
+      item.innerHTML = '<div class="sched-info"><div class="sched-name">' + id + (contactName !== task.contact_id ? ' — ' + contactName : '') + '</div><div class="sched-desc">' + describeCron(task.cron) + ' · ' + describeScanMode(task.scan_mode, task.date_start, task.date_end) + '</div></div><div class="sched-actions"><div class="toggle ' + (task.enabled ? 'on' : '') + '" onclick="toggleTask(\'' + id + '\',this)"></div><button class="btn btn-sm btn-danger" onclick="deleteTask(\'' + id + '\')">删除</button></div>';
+      list.appendChild(item);
+    });
+  } catch (e) { console.warn('加载任务失败', e); }
+}
+
+function getContactName(wxid) {
+  if (wxid === '__all__') return '所有人';
+  const c = contactsList.find(c => c.wxid === wxid);
+  return c ? getDisplayName(c) : wxid;
+}
+function describeCron(cron) {
+  if (!cron) return '未知时间';
+  const p = cron.split(/\s+/);
+  if (p.length !== 5) return cron;
+  if (p[4] === '1-5') return p[1] + ':' + p[0] + ' 工作日';
+  if (p[2] === '*' && p[4] === '*') return p[1] + ':' + p[0] + ' 每天';
+  return cron;
+}
+function describeScanMode(mode, ds, de) {
+  if (mode === 'today') return '扫描今日消息';
+  if (mode === 'all') return '扫描全部消息';
+  if (mode === 'range' && ds && de) return ds + ' ~ ' + de;
+  return mode || '未知';
+}
+async function deleteTask(id) { await fetch(API + '/api/scheduler/tasks/' + id, {method: 'DELETE'}); loadTasks(); }
+async function toggleTask(id, el) {
+  await fetch(API + '/api/scheduler/tasks/' + id, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled: !el.classList.contains('on')}) });
+  el.classList.toggle('on');
+}
+
+// ── Init ──
+connectSSE();
+refreshHealth();
+loadTasks();
+loadRuns().then(() => loadHistoricalLogs());
+setInterval(refreshHealth, 30000);
+</script>
+</body>
+</html>
