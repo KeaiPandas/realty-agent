@@ -155,22 +155,21 @@ WECHAT_DATA_DIR=C:\Users\你的用户名\Documents\WeChat Files\wxid_xxxxx
 > **前提：** 需要先安装 [Node.js](https://nodejs.org/)（下载 LTS 版本，安装时全部点"下一步"即可）。
 
 ```bash
-# 安装 lark-cli（飞书多维表格命令行工具）
-npm install -g lark-cli
+# 安装飞书官方 CLI 工具
+npm install -g @larksuite/cli
 
 # 验证安装（必须看到版本号输出才算安装成功）
 lark-cli --version
 ```
 
-> **常见问题：** 如果 `lark-cli --version` 提示"命令未找到"，说明 npm 全局路径没加入 PATH。有两种解决方式：
+> **注意：** 包名是 `@larksuite/cli`，不是 `lark-cli`。`npm install -g lark-cli` 安装的是一个无关的第三方包，无法使用。
 >
-> **方式 A — 将 npm 全局路径加入 PATH（推荐）：**
-> 1. 终端中运行 `npm config get prefix` 查看 npm 全局路径（通常是 `C:\Users\你的用户名\AppData\Roaming\npm`）
+> **常见问题：** 如果 `lark-cli --version` 提示"命令未找到"，说明 npm 全局路径没加入 PATH：
+> 1. 终端中运行 `npm config get prefix` 查看路径（通常是 `C:\Users\你的用户名\AppData\Roaming\npm`）
 > 2. 打开 Windows 设置 → 搜索"环境变量" → 编辑用户环境变量 → 在 PATH 中添加上面的路径
 > 3. 关闭并重新打开终端，再试 `lark-cli --version`
 >
-> **方式 B — 手动指定路径：**
-> 在 `config/sync.yaml` 中填写 lark-cli 的完整路径：
+> 如果仍然不行，可以在 `config/sync.yaml` 中手动指定完整路径：
 > ```yaml
 > lark_cli_path: "C:\\Users\\你的用户名\\AppData\\Roaming\\npm\\lark-cli.cmd"
 > ```
@@ -341,7 +340,7 @@ python main.py --parse-file <chat.txt>
 - **LangChain**: langchain-openai + @tool
 - **Web**: FastAPI + Uvicorn + SSE
 - **微信解密**: PyWxDump
-- **飞书同步**: lark-cli
+- **飞书同步**: @larksuite/cli（飞书官方 CLI）
 - **钉钉同步**: dws CLI
 - **定时任务**: APScheduler
 - **Python**: 3.12
