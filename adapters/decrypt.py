@@ -87,90 +87,201 @@ def _attach_wechat():
 
 # ── 4.x 密钥提取 ──────────────────────────────────────────
 
+def _verify_enc_key(enc_key: bytes, page0: bytes) -> bool:
+    """验证 enc_key 是否为该数据库的有效密钥（HMAC-SHA512 校验）"""
+    import hmac as _hmac
+
+    salt = page0[:16]
+    mac_salt = bytes(b ^ 0x3A for b in salt)
+    mac_key = hashlib.pbkdf2_hmac("sha512", enc_key, mac_salt, 2, dklen=32)
+
+    hmac_data = page0[16:4096 - 80 + 16]  # page0[16:4032]
+    stored_hmac = page0[4096 - 64:4096]   # page0[4032:4096]
+
+    hm = _hmac.new(mac_key, hmac_data, hashlib.sha512)
+    hm.update(struct.pack("<I", 1))
+    return hm.digest() == stored_hmac
+
+
 def _extract_keys_v4(db_files: dict[str, Path]) -> dict[str, str]:
-    """从 Weixin.exe 进程内存中提取每个数据库的 SQLCipher 4 密钥
+    """从 Weixin.exe 进程的全部可读内存中提取每个数据库的 SQLCipher 4 密钥
 
-    扫描 Weixin.dll 内存区域，查找 64 字符十六进制模式，
-    通过 HMAC-SHA512 校验验证密钥是否对某个数据库有效。
+    使用 ctypes 调用 Windows API (VirtualQueryEx / ReadProcessMemory) 遍历
+    进程的所有已提交可读内存区域，搜索 x'<hex>' 模式。
     """
-    import pymem
-    import pymem.process
+    import ctypes
+    import ctypes.wintypes as wt
     import re
-    from Crypto.Cipher import AES
 
-    pm = pymem.Pymem("Weixin.exe")
-
-    # 找 Weixin.dll
-    weixin_dll = None
-    for module in pymem.process.enum_process_module(pm.process_handle):
-        if module.name == "Weixin.dll":
-            weixin_dll = module
-            break
-
-    if not weixin_dll:
-        raise RuntimeError("未找到 Weixin.dll")
-
-    # 分块读取 DLL 内存（太大不能一次读）
-    base = weixin_dll.lpBaseOfDll
-    size = weixin_dll.SizeOfImage
-    CHUNK = 64 * 1024 * 1024  # 64MB per read
-
-    # 收集所有候选密钥（64 字符十六进制串）
-    candidates: list[bytes] = []
-    hex_pattern = re.compile(rb"[0-9a-fA-F]{64}")
-
-    for offset in range(0, size, CHUNK):
-        chunk_size = min(CHUNK, size - offset)
-        try:
-            data = pm.read_bytes(base + offset, chunk_size)
-            for m in hex_pattern.finditer(data):
-                candidates.append(m.group())
-        except Exception:
-            continue
-
-    if not candidates:
-        raise RuntimeError("未在 Weixin.dll 内存中找到候选密钥")
-
-    # 对每个数据库，验证候选密钥
     PAGE_SIZE = 4096
-    keys: dict[str, str] = {}
 
+    # 1) 收集所有数据库的 salt
+    db_salts: dict[bytes, tuple[str, bytes]] = {}
     for db_name, db_path in db_files.items():
         if not db_path.exists():
             continue
-
         with open(db_path, "rb") as f:
             page0 = f.read(PAGE_SIZE)
         if len(page0) < PAGE_SIZE:
             continue
+        db_salts[page0[:16]] = (db_name, page0)
 
-        salt = page0[:16]
-        mac_salt = bytes(b ^ 0x3a for b in salt)
+    if not db_salts:
+        raise RuntimeError("没有可解密的数据库文件")
 
-        found = False
-        for candidate in candidates:
-            raw_key = bytes.fromhex(candidate.decode("ascii"))
-            if len(raw_key) != 32:
-                continue
+    # 2) 找到所有 Weixin.exe 进程 PID（按内存占用降序）
+    import psutil
 
-            # 派生 HMAC 密钥
-            mac_key = hashlib.pbkdf2_hmac("sha512", raw_key, mac_salt, 2, dklen=32)
+    procs = []
+    for p in psutil.process_iter(["pid", "name", "memory_info"]):
+        if p.info["name"] == "Weixin.exe":
+            rss = p.info["memory_info"].rss if p.info["memory_info"] else 0
+            procs.append((p.info["pid"], rss))
+    procs.sort(key=lambda x: x[1], reverse=True)
+    pids: list[int] = [pid for pid, _ in procs]
+    if not pids:
+        raise RuntimeError("未找到 Weixin.exe 进程，请先登录微信")
 
-            # 计算第 0 页的 HMAC（不含 salt 和保留区域）
-            page_data = page0[16:PAGE_SIZE - 80]
-            iv = page0[PAGE_SIZE - 80:PAGE_SIZE - 64]
-            stored_hmac = page0[PAGE_SIZE - 64:PAGE_SIZE]
+    # 3) Windows API 定义
+    kernel32 = ctypes.windll.kernel32
 
-            import hmac as _hmac
-            computed = _hmac.new(mac_key, page_data + iv, hashlib.sha512).digest()
+    PROCESS_VM_READ = 0x0010
+    PROCESS_QUERY_INFORMATION = 0x0400
+    MEM_COMMIT = 0x1000
+    READABLE_PROTECTS = {0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80}
 
-            if computed == stored_hmac:
-                keys[db_name] = candidate.decode("ascii")
-                found = True
+    class MBI(ctypes.Structure):
+        _fields_ = [
+            ("BaseAddress", ctypes.c_uint64),
+            ("AllocationBase", ctypes.c_uint64),
+            ("AllocationProtect", wt.DWORD),
+            ("_pad1", wt.DWORD),
+            ("RegionSize", ctypes.c_uint64),
+            ("State", wt.DWORD),
+            ("Protect", wt.DWORD),
+            ("Type", wt.DWORD),
+            ("_pad2", wt.DWORD),
+        ]
+
+    key_pattern = re.compile(rb"x'([0-9a-fA-F]{64,192})'")
+    CHUNK = 64 * 1024 * 1024  # 64 MB per read
+
+    keys: dict[str, str] = {}
+    seen_keys: set[str] = set()
+
+    # 4) 逐进程扫描全部内存区域
+    for pid in pids:
+        handle = kernel32.OpenProcess(
+            PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, False, pid
+        )
+        if not handle:
+            continue
+
+        try:
+            addr_val = 0
+            mbi = MBI()
+
+            while addr_val < 0x7FFFFFFFFFFF:
+                mbi = MBI()
+                ret = kernel32.VirtualQueryEx(
+                    handle, ctypes.c_void_p(addr_val), ctypes.byref(mbi), ctypes.sizeof(mbi)
+                )
+                if ret != ctypes.sizeof(mbi):
+                    break
+
+                # 只扫描已提交的可读区域，跳过超大区域
+                if (
+                    mbi.State == MEM_COMMIT
+                    and mbi.Protect in READABLE_PROTECTS
+                    and 0 < mbi.RegionSize < 500 * 1024 * 1024
+                ):
+                    region_base = mbi.BaseAddress
+                    region_size = mbi.RegionSize
+
+                    for offset in range(0, region_size, CHUNK):
+                        read_size = min(CHUNK, region_size - offset)
+                        buf = (ctypes.c_ubyte * read_size)()
+                        n_read = ctypes.c_size_t()
+
+                        ok = kernel32.ReadProcessMemory(
+                            handle,
+                            ctypes.c_void_p(region_base + offset),
+                            buf,
+                            read_size,
+                            ctypes.byref(n_read),
+                        )
+                        if not ok or n_read.value == 0:
+                            continue
+
+                        data = bytes(buf)[: n_read.value]
+
+                        for m in key_pattern.finditer(data):
+                            hex_str = m.group(1).decode("ascii")
+                            hex_len = len(hex_str)
+                            if hex_len < 64 or hex_len % 2 != 0:
+                                continue
+
+                            enc_key_hex = hex_str[:64]
+
+                            if enc_key_hex in seen_keys:
+                                continue
+                            seen_keys.add(enc_key_hex)
+
+                            if hex_len == 64:
+                                continue
+
+                            enc_key = bytes.fromhex(enc_key_hex)
+
+                            if hex_len == 96:
+                                salt_hex = hex_str[64:]
+                            else:
+                                salt_hex = hex_str[-32:]
+
+                            salt_bytes = bytes.fromhex(salt_hex)
+                            matched = db_salts.get(salt_bytes)
+                            if not matched:
+                                continue
+
+                            db_name, page0 = matched
+                            if db_name in keys:
+                                continue
+
+                            if _verify_enc_key(enc_key, page0):
+                                keys[db_name] = enc_key_hex
+                                print(f"  + {db_name}: key found (PID {pid})")
+
+                # 移动到下一个区域
+                nxt = mbi.BaseAddress + mbi.RegionSize
+                if nxt <= addr_val:
+                    break
+                addr_val = nxt
+
+        finally:
+            kernel32.CloseHandle(handle)
+
+        # 如果所有数据库都找到密钥了，提前退出
+        if len(keys) == len(db_salts):
+            break
+
+    # 5) 对 salt 未匹配的密钥做交叉验证
+    if len(keys) < len(db_salts):
+        unmatched_salts = {
+            s: (n, p) for s, (n, p) in db_salts.items() if n not in keys
+        }
+        for enc_key_hex in seen_keys:
+            if len(unmatched_salts) == 0:
                 break
+            enc_key = bytes.fromhex(enc_key_hex)
+            for salt_bytes, (db_name, page0) in list(unmatched_salts.items()):
+                if _verify_enc_key(enc_key, page0):
+                    keys[db_name] = enc_key_hex
+                    del unmatched_salts[salt_bytes]
+                    print(f"  + {db_name}: key found (cross-verify)")
 
-        if not found:
-            print(f"  ✗ {db_name}: 未找到有效密钥")
+    # 报告未找到密钥的数据库
+    for salt_bytes, (db_name, _) in db_salts.items():
+        if db_name not in keys:
+            print(f"  X {db_name}: key not found")
 
     return keys
 
@@ -221,24 +332,21 @@ def _decrypt_db_v3(db_path, key_hex, output_path):
 # ── 4.x 解密 ──────────────────────────────────────────────
 
 def _decrypt_db_v4(db_path, key_hex, output_path):
-    """解密微信 4.x 数据库（SQLCipher 4，PBKDF2-HMAC-SHA512 256000 迭代，80 字节保留区）"""
-    import hmac as _hmac
+    """解密微信 4.x 数据库（SQLCipher 4，AES-256-CBC，80 字节保留区）
+
+    key_hex 是从内存中提取的 enc_key（已派生好的 32 字节 AES 密钥）。
+    输出保持 4096 字节/页：解密数据 + 80 字节零填充保留区。
+    """
     from Crypto.Cipher import AES
 
     PAGE_SIZE = 4096
     RESERVE = 80  # 16 (IV) + 64 (HMAC-SHA512)
+    SQLITE_HDR = b"SQLite format 3\x00"
 
-    raw_key = bytes.fromhex(key_hex)
+    enc_key = bytes.fromhex(key_hex)
 
     with open(db_path, "rb") as f:
         data = f.read()
-
-    salt = data[:16]
-    mac_salt = bytes(b ^ 0x3a for b in salt)
-
-    # 派生加密密钥和 HMAC 密钥
-    enc_key = hashlib.pbkdf2_hmac("sha512", raw_key, salt, 256000, dklen=32)
-    mac_key = hashlib.pbkdf2_hmac("sha512", enc_key, mac_salt, 2, dklen=32)
 
     decrypted = bytearray()
     total_pages = len(data) // PAGE_SIZE
@@ -247,23 +355,20 @@ def _decrypt_db_v4(db_path, key_hex, output_path):
         offset = page_num * PAGE_SIZE
         page = data[offset:offset + PAGE_SIZE]
 
+        iv = page[PAGE_SIZE - RESERVE:PAGE_SIZE - RESERVE + 16]
+
         if page_num == 0:
-            page_salt = page[:16]
-            page_enc_key = hashlib.pbkdf2_hmac(
-                "sha512", raw_key, page_salt, 256000, dklen=32
-            )
-            iv = page[PAGE_SIZE - RESERVE:PAGE_SIZE - RESERVE + 16]
             encrypted = page[16:PAGE_SIZE - RESERVE]
-            cipher = AES.new(page_enc_key, AES.MODE_CBC, iv)
-            dec = cipher.decrypt(encrypted)
-            decrypted.extend(b"SQLite format 3\x00")
+            dec = AES.new(enc_key, AES.MODE_CBC, iv).decrypt(encrypted)
+            decrypted.extend(SQLITE_HDR)
             decrypted.extend(dec)
         else:
-            iv = page[PAGE_SIZE - RESERVE:PAGE_SIZE - RESERVE + 16]
             encrypted = page[0:PAGE_SIZE - RESERVE]
-            cipher = AES.new(enc_key, AES.MODE_CBC, iv)
-            dec = cipher.decrypt(encrypted)
+            dec = AES.new(enc_key, AES.MODE_CBC, iv).decrypt(encrypted)
             decrypted.extend(dec)
+
+        # 每页补齐 80 字节保留区（填零），保持 4096 字节/页
+        decrypted.extend(b"\x00" * RESERVE)
 
     with open(output_path, "wb") as f:
         f.write(decrypted)
@@ -323,9 +428,9 @@ def decrypt_all_databases(config=None) -> dict[str, str]:
             try:
                 _decrypt_db_v4(str(db_path), key_hex, str(out_path))
                 decrypted[name] = str(out_path)
-                print(f"  ✓ {name}")
+                print(f"  + {name}")
             except Exception as e:
-                print(f"  ✗ {name}: {e}")
+                print(f"  X {name}: {e}")
     else:
         # 3.x: 单一密钥
         print("[密钥] 从微信进程提取密钥...")
@@ -344,8 +449,8 @@ def decrypt_all_databases(config=None) -> dict[str, str]:
             try:
                 _decrypt_db_v3(str(db_path), key, str(out_path))
                 decrypted[name] = str(out_path)
-                print(f"  ✓ {name}")
+                print(f"  + {name}")
             except Exception as e:
-                print(f"  ✗ {name}: {e}")
+                print(f"  X {name}: {e}")
 
     return decrypted
