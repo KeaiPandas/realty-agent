@@ -231,8 +231,12 @@ async def _execute_pipeline(run_id: str, req: PipelineRequest):
             try:
                 from main import step_sync_feishu
                 result = await asyncio.to_thread(step_sync_feishu, profile)
-                log_step_end(eid, output=f"action={result['action']}")
-                _update_run_state(run_id, steps={**_run_state[run_id]["steps"], "sync_feishu": "done"})
+                if result:
+                    log_step_end(eid, output=f"action={result['action']}")
+                    _update_run_state(run_id, steps={**_run_state[run_id]["steps"], "sync_feishu": "done"})
+                else:
+                    log_step_end(eid, output="跳过（未配置飞书）")
+                    _update_run_state(run_id, steps={**_run_state[run_id]["steps"], "sync_feishu": "skipped"})
             except Exception as e:
                 log_step_end(eid, error=str(e))
                 _update_run_state(run_id, steps={**_run_state[run_id]["steps"], "sync_feishu": "failed"})

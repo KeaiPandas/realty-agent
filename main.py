@@ -108,6 +108,7 @@ def step_sync_feishu(profile: CustomerProfile):
     )
     print(f"   结果: {result['action']}")
     print(f"   详情: {json.dumps(result, ensure_ascii=False, indent=2)}")
+    return result
 
 
 async def run_pipeline(
