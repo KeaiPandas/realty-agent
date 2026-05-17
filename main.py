@@ -4,7 +4,7 @@ AI客服A岗 MVP — 端到端管道
   python main.py --list-contacts                    # 列出微信私聊联系人
   python main.py --contact <wxid>                   # 提取+解析+同步
   python main.py --contact <wxid> --date 2026-05-03 # 指定日期
-  python main.py --contact <wxid> --parse-only      # 只解析不同步钉钉
+  python main.py --contact <wxid> --parse-only      # 只解析不同步飞书
   python main.py --parse-file <chat.txt>            # 直接解析指定文件
 """
 import argparse
@@ -23,13 +23,8 @@ def step_decrypt() -> dict:
     """Step 1: 解密微信数据库"""
     print("[1/4] 解密微信数据库...")
     from adapters.decrypt import decrypt_all_databases
-    import yaml
 
-    config_path = Path(__file__).parent / "adapters" / "config.yaml"
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-
-    db_paths = decrypt_all_databases(config)
+    db_paths = decrypt_all_databases()
     print(f"   解密了 {len(db_paths)} 个数据库")
     return db_paths
 
@@ -37,13 +32,14 @@ def step_decrypt() -> dict:
 def step_list_contacts(db_paths: dict):
     """Step 2: 列出私聊联系人"""
     from adapters.extract import get_dm_contacts
+    from adapters.db_layout import get_contact_db
 
-    micromsg_path = db_paths.get("MicroMsg")
-    if not micromsg_path:
-        print("错误: MicroMsg.db 未解密")
+    contact_db = get_contact_db(db_paths)
+    if not contact_db:
+        print("错误: 联系人数据库未解密")
         return
 
-    contacts = get_dm_contacts(micromsg_path)
+    contacts = get_dm_contacts(contact_db)
     print(f"\n共 {len(contacts)} 个私聊联系人：")
     for i, c in enumerate(contacts[:settings.LIST_CONTACTS_LIMIT], 1):
         alias_str = f" (微信号: {c['alias']})" if c["alias"] else ""
@@ -177,7 +173,7 @@ def main():
     parser.add_argument("--list-contacts", action="store_true", help="列出微信私聊联系人")
     parser.add_argument("--contact", type=str, help="联系人wxid")
     parser.add_argument("--date", type=str, help="指定日期 (YYYY-MM-DD)")
-    parser.add_argument("--parse-only", action="store_true", help="只解析不同步钉钉")
+    parser.add_argument("--parse-only", action="store_true", help="只解析不同步飞书")
     parser.add_argument("--parse-file", type=str, help="直接解析指定的聊天记录文件")
     args = parser.parse_args()
 

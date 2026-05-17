@@ -118,7 +118,7 @@ profile_parser:
 
     请以JSON格式输出提取到的字段，不确定的字段设为null。
 
-# 对话Agent提示词（后续Phase使用）
+# 对话Agent提示词（预留，当前管道未使用）
 chat_agent:
   greeting:
     system: |

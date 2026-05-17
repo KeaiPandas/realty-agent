@@ -2,116 +2,46 @@
 import sqlite3
 from pathlib import Path
 
+from adapters.db_layout import get_contact_db, get_message_dbs
 from langchain_core.tools import tool
-
 
 # 缓存解密后的数据库路径，避免重复解密
 _db_cache: dict = {}
 
 
-def _get_wx_account() -> dict:
-    """获取微信账号信息（wxid, key, wx_dir）"""
-    from adapters.decrypt import get_wx_info
-
-    wx_info = get_wx_info()
-    if isinstance(wx_info, list) and wx_info:
-        info = wx_info[0]
-        return {
-            "wxid": info.get("wxid", ""),
-            "key": info.get("key", ""),
-            "wx_dir": info.get("wx_dir", ""),
-            "version": info.get("version", ""),
-        }
-    raise RuntimeError("未检测到微信进程，请确保微信已登录并运行")
-
-
-def _ensure_decrypted() -> dict:
-    """确保数据库已解密，返回 {name: path}"""
+def _get_or_decrypt_db_paths() -> dict:
+    """获取解密后的数据库路径（带缓存）"""
     global _db_cache
     if _db_cache:
         return _db_cache
 
-    from adapters.decrypt import get_wx_info
-    from config import settings
-    from pywxdump import decrypt as wx_decrypt
-
-    account = _get_wx_account()
-    wx_dir = account["wx_dir"]
-    key = account["key"]
-
-    data_dir = Path(__file__).parent.parent.parent / settings.DATA_DIR
-    data_dir.mkdir(exist_ok=True)
-
-    msg_dir = Path(wx_dir) / "Msg"
-    db_files = {
-        name: msg_dir / f"{name}.db"
-        for name in settings.WECHAT_DB_NAMES
-    }
-    multi_dir = msg_dir / "Multi"
-    if multi_dir.exists():
-        for f in sorted(multi_dir.glob("MSG*.db")):
-            db_files[f.stem] = f
-
-    for name, src_path in db_files.items():
-        if not src_path.exists():
-            continue
-        dst = data_dir / f"{name}_decrypted.db"
-        try:
-            wx_decrypt(key, str(src_path), str(dst))
-            _db_cache[name] = str(dst)
-        except Exception as e:
-            _db_cache[name] = None
-
+    from adapters.decrypt import decrypt_all_databases
+    _db_cache = decrypt_all_databases()
     return _db_cache
 
 
 @tool
 def get_wechat_info() -> dict:
     """获取当前登录的微信账号信息，包括 wxid、数据目录、版本号。无需参数。"""
-    return _get_wx_account()
+    from adapters.db_layout import detect_wechat_version
+    version = detect_wechat_version()
+    from config import settings
+    return {
+        "version": version,
+        "data_dir": settings.WECHAT_DATA_DIR,
+    }
 
 
 @tool
-def decrypt_wechat_db(wx_dir: str = "") -> dict:
-    """解密微信本地数据库文件（MicroMsg.db、ChatMsg.db 等）。
+def decrypt_wechat_db() -> dict:
+    """解密微信本地数据库文件。无需参数，自动检测版本并解密。
 
-    Args:
-        wx_dir: 微信数据目录，留空则自动检测。
     Returns:
-        解密后的数据库路径字典，如 {"MicroMsg": "path/to/db", ...}
+        解密后的数据库路径字典，如 {"contact": "path/to/db", ...}
     """
     global _db_cache
     _db_cache = {}
-
-    if wx_dir:
-        from adapters.decrypt import decrypt_db, get_wx_info
-        from config import settings
-
-        wx_info = get_wx_info()
-        key = ""
-        if isinstance(wx_info, list) and wx_info:
-            key = wx_info[0].get("key", "")
-
-        data_dir = Path(__file__).parent.parent.parent / settings.DATA_DIR
-        data_dir.mkdir(exist_ok=True)
-        msg_dir = Path(wx_dir) / "Msg"
-
-        for name in settings.WECHAT_DB_NAMES:
-            src = msg_dir / f"{name}.db"
-            if src.exists():
-                dst = data_dir / f"{name}_decrypted.db"
-                decrypt_db(str(src), key, str(dst))
-                _db_cache[name] = str(dst)
-
-        multi = msg_dir / "Multi"
-        if multi.exists():
-            for f in sorted(multi.glob("MSG*.db")):
-                dst = data_dir / f"{f.stem}_decrypted.db"
-                decrypt_db(str(f), key, str(dst))
-                _db_cache[f.stem] = str(dst)
-    else:
-        _ensure_decrypted()
-
+    _db_cache = decrypt_all_databases()
     return {k: v for k, v in _db_cache.items() if v}
 
 
@@ -124,12 +54,12 @@ def search_wechat_contact(name: str) -> list[dict]:
     Returns:
         匹配的联系人列表，每项包含 wxid, nickname, alias, remark
     """
-    db_paths = _ensure_decrypted()
-    micromsg_db = db_paths.get("MicroMsg")
-    if not micromsg_db:
-        raise RuntimeError("MicroMsg.db 未解密，请先调用 decrypt_wechat_db")
+    db_paths = _get_or_decrypt_db_paths()
+    contact_db = get_contact_db(db_paths)
+    if not contact_db:
+        raise RuntimeError("联系人数据库未解密，请先调用 decrypt_wechat_db")
 
-    conn = sqlite3.connect(micromsg_db)
+    conn = sqlite3.connect(contact_db)
     cur = conn.cursor()
     cur.execute(
         """
@@ -141,11 +71,10 @@ def search_wechat_contact(name: str) -> list[dict]:
         """,
         (f"%{name}%", f"%{name}%"),
     )
-    results = []
-    for row in cur.fetchall():
-        results.append(
-            {"wxid": row[0], "nickname": row[1], "alias": row[2], "remark": row[3]}
-        )
+    results = [
+        {"wxid": row[0], "nickname": row[1], "alias": row[2], "remark": row[3]}
+        for row in cur.fetchall()
+    ]
     conn.close()
     return results
 
@@ -161,14 +90,14 @@ def extract_dm_messages(wxid: str, date: str = "", limit: int = 0) -> str:
     Returns:
         格式化的聊天记录文本
     """
-    from adapters.extract import extract_dm_messages, format_dm_messages
+    from adapters.extract import extract_dm_messages as _extract, format_dm_messages
     from config import settings
 
-    db_paths = _ensure_decrypted()
-    if not db_paths.get("MicroMsg"):
+    db_paths = _get_or_decrypt_db_paths()
+    if not get_contact_db(db_paths):
         raise RuntimeError("数据库未解密，请先调用 decrypt_wechat_db")
 
-    messages = extract_dm_messages(
+    messages = _extract(
         db_paths, wxid, date=date or None, limit=limit or settings.DM_MSG_LIMIT
     )
     if not messages:

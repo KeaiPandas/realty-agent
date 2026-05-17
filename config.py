@@ -71,6 +71,9 @@ class Settings:
         self.WECHAT_DATA_DIR = _env(
             "WECHAT_DATA_DIR", wechat.get("data_dir") or ""
         )
+        self.WECHAT_VERSION = _env(
+            "WECHAT_VERSION", wechat.get("version") or "auto"
+        )
         self.WECHAT_DB_NAMES = wechat.get("db_names", ["MicroMsg", "ChatMsg"])
         self.MSG_SCAN_RANGE = int(wechat.get("msg_scan_range", 100))
 

@@ -102,7 +102,7 @@ DINGTALK_FIELD_MAP = {
     "联系方式": "phone",
     "客户姓名": "name",
     "性别": "gender",
-    "年龄区间": "age_range",
+    "年龄区间": "age",
     "籍贯": "hometown",
     "现在居住城市": "current_city",
     "工作单位性质": "employer_type",

@@ -1,22 +1,29 @@
 """工作流控制 — 启动/停止管道、联系人列表、解密"""
 import asyncio
 import json
+import time
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from adapters.db_layout import get_contact_db
 from api.tool_logger import log_step, log_step_end, log_pipeline_event
 from config import settings
 
 router = APIRouter()
 
 _active_runs: dict[str, asyncio.Task] = {}
-_run_history: list[dict] = []
+_run_history: deque[dict] = deque(maxlen=50)
 _decrypted_db_paths: dict = {}
 _run_state: dict[str, dict] = {}
+
+
+def _now() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _update_run_state(run_id: str, **kwargs):
@@ -41,34 +48,17 @@ class PipelineRequest(BaseModel):
     parse_only: bool = False
 
 
-def _get_existing_decrypted() -> dict:
-    """检查 data/ 目录下是否有已解密的数据库"""
-    from adapters.extract import get_contact_nicknames
-    data_dir = Path(__file__).parent.parent.parent / settings.DATA_DIR
-    paths = {}
-    for db_file in data_dir.glob("*_decrypted.db"):
-        name = db_file.stem.replace("_decrypted", "")
-        paths[name] = str(db_file)
-    return paths
-
-
 def _do_decrypt() -> dict:
     """执行完整的数据库解密"""
     from adapters.decrypt import decrypt_all_databases
-    import yaml
-    config_path = Path(__file__).parent.parent.parent / "adapters" / "config.yaml"
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    return decrypt_all_databases(config)
+    return decrypt_all_databases()
 
 
 def _ensure_decrypted() -> dict:
     """确保有解密后的数据库可用"""
     global _decrypted_db_paths
-    existing = _get_existing_decrypted()
-    if existing.get("MicroMsg"):
-        _decrypted_db_paths = existing
-        return existing
+    if _decrypted_db_paths and get_contact_db(_decrypted_db_paths):
+        return _decrypted_db_paths
     result = _do_decrypt()
     _decrypted_db_paths = result
     return result
@@ -100,20 +90,16 @@ async def start_pipeline(req: PipelineRequest):
 @router.post("/stop")
 async def stop_pipeline(req: dict):
     run_id = req.get("run_id", "")
-    now = __import__("time").strftime("%Y-%m-%d %H:%M:%S")
+    now = _now()
     task = _active_runs.get(run_id)
     if task and not task.done():
         task.cancel()
         del _active_runs[run_id]
-        # Immediately mark state as stopped so refresh won't show stale "running"
-        _update_run_state(run_id, status="completed", message="已停止",
-                          endTime=now)
+        _update_run_state(run_id, status="completed", message="已停止", endTime=now)
         _finish_run(run_id, "completed", "已停止")
         return {"status": "cancelled"}
-    # Task already gone but _run_state still shows "running" (page refresh missed SSE)
     if run_id in _run_state and _run_state[run_id].get("status") == "running":
-        _update_run_state(run_id, status="completed", message="任务已结束",
-                          endTime=now)
+        _update_run_state(run_id, status="completed", message="任务已结束", endTime=now)
         _finish_run(run_id, "completed", "任务已结束")
         return {"status": "stopped"}
     raise HTTPException(404, f"运行 {run_id} 不存在或已结束")
@@ -140,8 +126,8 @@ async def list_runs():
 async def list_contacts():
     try:
         db_paths = await asyncio.to_thread(_ensure_decrypted)
-        if not db_paths.get("MicroMsg"):
-            raise HTTPException(500, "MicroMsg 数据库未解密，请先点击解密")
+        if not get_contact_db(db_paths):
+            raise HTTPException(500, "联系人数据库未解密，请先点击解密")
         from adapters.extract import get_dm_contacts_with_messages
         contacts = await asyncio.to_thread(get_dm_contacts_with_messages, db_paths)
         return contacts[:settings.LIST_CONTACTS_LIMIT]
@@ -156,11 +142,11 @@ def _resolve_contact_name(contact_id: str) -> str:
     if contact_id == "__all__":
         return "所有人"
     try:
-        db_paths = _get_existing_decrypted()
-        micromsg = db_paths.get("MicroMsg")
-        if micromsg:
+        db_paths = _decrypted_db_paths or {}
+        contact_db = get_contact_db(db_paths)
+        if contact_db:
             from adapters.extract import get_contact_nicknames
-            nicknames = get_contact_nicknames(micromsg)
+            nicknames = get_contact_nicknames(contact_db)
             if nicknames.get(contact_id):
                 return nicknames[contact_id]
     except Exception:
@@ -176,8 +162,7 @@ async def _execute_pipeline(run_id: str, req: PipelineRequest):
     contact_name = await asyncio.to_thread(_resolve_contact_name, req.contact_id)
     log_pipeline_event("pipeline_start", run_id=run_id, contact_id=req.contact_id)
     _update_run_state(run_id, contact=req.contact_id, contact_name=contact_name,
-                      status="running",
-                      startTime=__import__("time").strftime("%Y-%m-%d %H:%M:%S"),
+                      status="running", startTime=_now(),
                       steps={}, error="", message="")
 
     try:
@@ -254,14 +239,12 @@ async def _execute_pipeline(run_id: str, req: PipelineRequest):
                 raise
 
         log_pipeline_event("pipeline_end", run_id=run_id, status="completed")
-        _update_run_state(run_id, status="completed",
-                          endTime=__import__("time").strftime("%Y-%m-%d %H:%M:%S"))
+        _update_run_state(run_id, status="completed", endTime=_now())
         _finish_run(run_id, "completed")
 
     except Exception as e:
         log_pipeline_event("pipeline_end", run_id=run_id, status="failed", error=str(e))
-        _update_run_state(run_id, status="failed", error=str(e),
-                          endTime=__import__("time").strftime("%Y-%m-%d %H:%M:%S"))
+        _update_run_state(run_id, status="failed", error=str(e), endTime=_now())
         _finish_run(run_id, "failed", str(e))
 
 
@@ -269,8 +252,7 @@ async def _execute_pipeline_all(run_id: str, req: PipelineRequest):
     """批量逐个处理所有有消息的联系人，每条上限100"""
     log_pipeline_event("pipeline_start", run_id=run_id, contact_id="__all__")
     _update_run_state(run_id, contact="__all__", contact_name="所有人",
-                      status="running",
-                      startTime=__import__("time").strftime("%Y-%m-%d %H:%M:%S"),
+                      status="running", startTime=_now(),
                       steps={"decrypt_db": "active"}, error="", message="")
 
     try:
@@ -299,7 +281,6 @@ async def _execute_pipeline_all(run_id: str, req: PipelineRequest):
         task = asyncio.current_task()
 
         for idx, contact in enumerate(contacts, 1):
-            # 检查是否被用户取消
             if task and task.cancelled():
                 log_pipeline_event("pipeline_end", run_id=run_id, status="completed",
                                    message=f"用户停止: 已处理 {processed}, 跳过 {skipped}, 失败 {failed}")
@@ -361,20 +342,17 @@ async def _execute_pipeline_all(run_id: str, req: PipelineRequest):
 
         summary = f"完成: {processed} 个解析成功, {skipped} 个无消息, {failed} 个失败"
         log_pipeline_event("pipeline_end", run_id=run_id, status="completed", message=summary)
-        _update_run_state(run_id, status="completed", message=summary,
-                          endTime=__import__("time").strftime("%Y-%m-%d %H:%M:%S"))
+        _update_run_state(run_id, status="completed", message=summary, endTime=_now())
         _finish_run(run_id, "completed", summary)
 
     except asyncio.CancelledError:
         log_pipeline_event("pipeline_end", run_id=run_id, status="completed",
                            message="用户手动停止")
-        _update_run_state(run_id, status="completed", message="用户手动停止",
-                          endTime=__import__("time").strftime("%Y-%m-%d %H:%M:%S"))
+        _update_run_state(run_id, status="completed", message="用户手动停止", endTime=_now())
         _finish_run(run_id, "completed", "用户手动停止")
     except Exception as e:
         log_pipeline_event("pipeline_end", run_id=run_id, status="failed", error=str(e))
-        _update_run_state(run_id, status="failed", error=str(e),
-                          endTime=__import__("time").strftime("%Y-%m-%d %H:%M:%S"))
+        _update_run_state(run_id, status="failed", error=str(e), endTime=_now())
         _finish_run(run_id, "failed", str(e))
 
 
@@ -383,8 +361,6 @@ def _finish_run(run_id: str, status: str, message: str = ""):
         "run_id": run_id,
         "status": status,
         "message": message,
-        "finished_at": __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
+        "finished_at": _now(),
     })
     _active_runs.pop(run_id, None)
-    if len(_run_history) > 50:
-        _run_history.pop(0)

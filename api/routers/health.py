@@ -12,48 +12,54 @@ def _check_wechat_process() -> dict:
     try:
         import psutil
         procs = [p for p in psutil.process_iter(["name"])
-                 if p.info["name"] and "WeChat" in p.info["name"]]
+                 if p.info["name"] and ("WeChat" in p.info["name"] or "Weixin" in p.info["name"])]
         if procs:
-            return {"status": "ok", "message": "微信进程运行中"}
+            names = set(p.info["name"] for p in procs)
+            return {"status": "ok", "message": f"微信进程运行中 ({', '.join(names)})"}
         return {"status": "error", "message": "未检测到微信进程，请先登录微信"}
     except Exception as e:
         return {"status": "error", "message": f"检测失败: {e}"}
 
 
 def _check_wechat_db() -> dict:
-    if settings.WECHAT_DATA_DIR:
-        msg_dir = Path(settings.WECHAT_DATA_DIR) / "Msg"
+    data_dir = settings.WECHAT_DATA_DIR
+    if data_dir:
+        data_path = Path(data_dir)
+        # 4.x: db_storage/ 目录
+        storage_dir = data_path / "db_storage"
+        if storage_dir.exists():
+            db_files = list(storage_dir.rglob("*.db"))
+            if db_files:
+                return {"status": "ok", "message": f"找到 {len(db_files)} 个数据库文件 (4.x)"}
+        # 3.x: Msg/ 目录
+        msg_dir = data_path / "Msg"
         if msg_dir.exists():
             db_files = list(msg_dir.glob("*.db"))
             if db_files:
-                return {"status": "ok", "message": f"找到 {len(db_files)} 个数据库文件"}
-            return {"status": "error", "message": f"Msg 目录下无 .db 文件: {msg_dir}"}
-        return {"status": "error", "message": f"目录不存在: {msg_dir}"}
+                return {"status": "ok", "message": f"找到 {len(db_files)} 个数据库文件 (3.x)"}
+        return {
+            "status": "error",
+            "message": (
+                f"目录结构不匹配: {data_dir}。"
+                "4.x 需要 db_storage/ 子目录，3.x 需要 Msg/ 子目录"
+            ),
+        }
     try:
         import io, sys
         old_stderr = sys.stderr
         sys.stderr = io.StringIO()
         try:
-            from adapters.decrypt import get_wx_info
-            info = get_wx_info()
+            from adapters.db_layout import detect_wechat_version
+            version = detect_wechat_version()
+            return {"status": "ok", "message": f"检测到微信 {version} 进程，但未配置数据目录"}
         finally:
             sys.stderr = old_stderr
-        if info and isinstance(info, list) and info[0].get("wx_dir"):
-            return {"status": "ok", "message": "已通过 pywxdump 自动检测到微信数据"}
-        return {
-            "status": "error",
-            "message": (
-                "无法自动检测微信数据目录。"
-                "请在 config/wechat.yaml 中配置 data_dir，"
-                "路径通常类似: C:\\Users\\<用户名>\\Documents\\WeChat Files\\<wxid_xxx>"
-            ),
-        }
     except Exception as e:
         return {
             "status": "error",
             "message": (
                 f"自动检测失败: {e}。"
-                "请在 config/wechat.yaml 中手动配置 data_dir"
+                "请在 .env 中配置 WECHAT_DATA_DIR"
             ),
         }
 
@@ -65,7 +71,7 @@ def _check_feishu() -> dict:
             "status": "error",
             "message": (
                 f"lark-cli 未找到: {lark_path}。"
-                "请安装: npm install -g lark-cli，"
+                "请安装: npm install -g @larksuite/cli，"
                 "或在 config/sync.yaml 中配置 lark_cli_path"
             ),
         }
