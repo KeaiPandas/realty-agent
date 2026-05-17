@@ -54,11 +54,39 @@ def _do_decrypt() -> dict:
     return decrypt_all_databases()
 
 
+def _find_existing_decrypted() -> dict[str, str] | None:
+    """检查磁盘上已有的解密文件（服务器重启后仍可用）"""
+    try:
+        from adapters.decrypt import _resolve_version
+        from adapters.db_layout import get_db_layout
+        version = _resolve_version()
+        wechat_dir = settings.WECHAT_DATA_DIR
+        if not wechat_dir:
+            return None
+        wechat_dir = Path(wechat_dir)
+        dec_dir = wechat_dir / "decrypted"
+        if not dec_dir.exists():
+            return None
+        db_layout = get_db_layout(wechat_dir, version)
+        existing = {}
+        for name in db_layout:
+            dec_path = dec_dir / f"{name}.db"
+            if dec_path.exists() and dec_path.stat().st_size > 0:
+                existing[name] = str(dec_path)
+        return existing if get_contact_db(existing) else None
+    except Exception:
+        return None
+
+
 def _ensure_decrypted() -> dict:
-    """确保有解密后的数据库可用"""
+    """确保有解密后的数据库可用（内存 → 磁盘 → 重新解密）"""
     global _decrypted_db_paths
     if _decrypted_db_paths and get_contact_db(_decrypted_db_paths):
         return _decrypted_db_paths
+    existing = _find_existing_decrypted()
+    if existing:
+        _decrypted_db_paths = existing
+        return existing
     result = _do_decrypt()
     _decrypted_db_paths = result
     return result
@@ -66,10 +94,9 @@ def _ensure_decrypted() -> dict:
 
 @router.get("/decrypt")
 async def decrypt_databases():
-    """触发数据库解密，返回解密状态"""
+    """触发数据库解密（优先复用已有文件）"""
     try:
-        result = await asyncio.to_thread(_do_decrypt)
-        _decrypted_db_paths = result
+        result = await asyncio.to_thread(_ensure_decrypted)
         return {"status": "ok", "databases": list(result.keys())}
     except Exception as e:
         return {"status": "error", "message": str(e)}

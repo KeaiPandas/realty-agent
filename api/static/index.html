@@ -1501,6 +1501,54 @@ refreshHealth();
 loadTasks();
 loadRuns().then(() => loadHistoricalLogs());
 setInterval(refreshHealth, 30000);
+
+// ── Polling fallback for real-time updates ──
+let _lastLogCount = 0;
+function pollUpdates() {
+  fetch(API + '/api/workflow/runs').then(r => r.json()).then(data => {
+    if (!data.runs) return;
+    let changed = false;
+    data.runs.forEach(run => {
+      const existing = pipelineRuns[run.id];
+      // Always update if backend has newer data (completed status, step updates)
+      if (!existing || existing.status === 'running' || run.status !== existing.status) {
+        pipelineRuns[run.id] = run;
+        changed = true;
+      }
+    });
+    // Check if any running task exists
+    const hasRunning = data.runs.some(r => r.status === 'running');
+    if (hasRunning) {
+      setPipelineRunning(true, '');
+      currentRunId = data.runs.find(r => r.status === 'running').id;
+    }
+    if (changed) renderTaskList();
+    // If there's a running task, also refresh logs
+    if (hasRunning) loadHistoricalLogs();
+  }).catch(() => {});
+}
+setInterval(pollUpdates, 3000);
+
+// ── Auto-load contacts if already decrypted ──
+(async function autoLoad() {
+  try {
+    const resp = await fetch(API + '/api/workflow/contacts');
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data) && data.length > 0) {
+        contactsList = data;
+        const cpInput = document.getElementById('cpInput');
+        cpInput.value = '';
+        cpInput.placeholder = '搜索联系人...';
+        cpInput.readOnly = false;
+        document.getElementById('decryptStatus').className = 'decrypt-status done';
+        document.getElementById('decryptStatus').textContent = '已加载 ' + contactsList.length + ' 个联系人';
+      }
+    }
+  } catch (e) {
+    // Not decrypted yet, user needs to click decrypt
+  }
+})();
 </script>
 </body>
 </html>
