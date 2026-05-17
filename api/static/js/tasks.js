@@ -1,5 +1,6 @@
 // Task list rendering — running/history tabs
-import { state, pipelineRuns, STEPS, STEP_LABELS, escHtml, getContactName, stopRun as doStopRun, filterLogs } from './state.js';
+import { state, pipelineRuns, STEPS, STEP_LABELS, escHtml, getContactName, stopRun as doStopRun } from './state.js';
+import { filterLogs } from './logs.js';
 
 export function switchTaskTab(tab, el) {
   state.currentTaskTab = tab;
