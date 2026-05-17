@@ -26,8 +26,8 @@ def get_wx_info():
 def _find_wechat_process():
     """查找微信主进程（兼容不同版本的进程名）"""
     import pymem
-    # 新版微信使用 WeChatAppEx，旧版使用 WeChat.exe
-    for name in ("WeChat.exe", "WeChatAppEx.exe"):
+    # 新版微信使用 Weixin.exe，旧版使用 WeChat.exe，渲染进程为 WeChatAppEx.exe
+    for name in ("Weixin.exe", "WeChat.exe", "WeChatAppEx.exe"):
         try:
             return pymem.Pymem(name)
         except Exception:
