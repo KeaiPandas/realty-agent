@@ -148,42 +148,58 @@ WECHAT_DATA_DIR=C:\Users\你的用户名\Documents\WeChat Files\wxid_xxxxx
 | `config/agent.yaml` | 消息提取条数、联系人显示上限 |
 | `config/paths.yaml` | 数据目录、提示词文件路径 |
 
-### 第 4.5 步：（可选）安装飞书同步工具
+### 第 4.5 步：（可选）飞书同步
 
-如果你需要把客户画像同步到飞书多维表格，需要安装 `lark-cli` 命令行工具。不需要飞书同步可以跳过。
+> 前置：[Node.js](https://nodejs.org/)（LTS）。不需要飞书同步可跳过。
 
-> **前提：** 需要先安装 [Node.js](https://nodejs.org/)（下载 LTS 版本，安装时全部点"下一步"即可）。
+**1. 安装 lark-cli**
 
 ```bash
-# 安装飞书官方 CLI 工具
-npm install -g @larksuite/cli
-
-# 验证安装（必须看到版本号输出才算安装成功）
+npm install -g @larksuite/cli    # ⚠️ 包名是 @larksuite/cli，不是 lark-cli
 lark-cli --version
 ```
 
-> **注意：** 包名是 `@larksuite/cli`，不是 `lark-cli`。`npm install -g lark-cli` 安装的是一个无关的第三方包，无法使用。
->
-> **常见问题：** 如果 `lark-cli --version` 提示"命令未找到"，说明 npm 全局路径没加入 PATH：
-> 1. 终端中运行 `npm config get prefix` 查看路径（通常是 `C:\Users\你的用户名\AppData\Roaming\npm`）
-> 2. 打开 Windows 设置 → 搜索"环境变量" → 编辑用户环境变量 → 在 PATH 中添加上面的路径
-> 3. 关闭并重新打开终端，再试 `lark-cli --version`
->
-> 如果仍然不行，可以在 `config/sync.yaml` 中手动指定完整路径：
-> ```yaml
-> lark_cli_path: "C:\\Users\\你的用户名\\AppData\\Roaming\\npm\\lark-cli.cmd"
-> ```
+命令未找到？将 `npm config get prefix` 的输出路径加入 PATH，或直接在 `config/sync.yaml` 指定 `lark_cli_path`。
 
-安装完成后，在 `.env` 文件中填写飞书配置：
+**2. 创建飞书应用**
 
-```env
-FEISHU_BASE_TOKEN=你的飞书多维表格base_token
-FEISHU_TABLE_ID=你的飞书多维表格table_id
+1. [飞书开放平台](https://open.feishu.cn/) → 创建企业自建应用，记下 App ID / App Secret
+2. 权限管理 → 开通 `bitable:app`（多维表格读写）
+3. **创建新版本并发布** — 仅添加权限不发布不会生效
+
+**3. 添加应用为多维表格协作者** ⚡ 最常见的坑
+
+Bot（应用身份）**不能**用「分享」按钮添加，必须走「添加文档应用」入口：
+
+浏览器打开多维表格 → **「...」** → **「...更多」** → **「添加文档应用」** → 搜索应用名 → 授予可编辑权限
+
+> - 应用至少开通了一个云文档 API 权限才能被搜到
+> - 多维表格如开启了高级权限，需授予**可管理**
+
+**4. 配置本机凭据**（每台机器执行一次）
+
+```bash
+echo "你的AppSecret" | lark-cli config init --app-id 你的AppID --app-secret-stdin
+lark-cli config show   # 验证
 ```
 
-> **如何获取 base_token 和 table_id：** 打开飞书多维表格的网页链接，URL 格式为：
-> `https://xxx.feishu.cn/base/XXXXXXXXXXXXXX?table=tblYYYYYYYYYY`
-> 其中 `XXXXXXXXXXXXXX` 是 `FEISHU_BASE_TOKEN`，`tblYYYYYYYYYY` 是 `FEISHU_TABLE_ID`。
+**5. 填写 .env**
+
+从多维表格网页 URL 提取：`https://xxx.feishu.cn/base/XXXXXX?table=tblYYYYY`
+
+```env
+FEISHU_BASE_TOKEN=XXXXXX          # /base/ 和 ?table= 之间的部分
+FEISHU_TABLE_ID=tblYYYYY          # ?table= 后面的部分，注意末尾字符
+```
+
+**常见报错排查：**
+
+| 报错 | 原因 | 解决 |
+|------|------|------|
+| `91403` 权限不足 | 应用不是多维表格协作者 | 检查步骤 3（「添加文档应用」） |
+| `91403` 权限不足 | 应用未发布 / 高级权限限制 | 发布新版本；或授予可管理权限 |
+| `not configured` | 本机未配置凭据 | 重新执行步骤 4 |
+| `not_found` | table_id 不完整 | 检查 `.env` 中 TABLE_ID 末尾字符 |
 
 ### 第 5 步：启动服务
 
