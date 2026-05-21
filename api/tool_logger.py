@@ -3,19 +3,12 @@ import asyncio
 import time
 import uuid
 from collections import deque
-from typing import Any
 
+from api.event_bus import event_bus
+
+CHANNEL = "pipeline_logs"
 MAX_LOG_ENTRIES = 1000
 _log_buffer: deque[dict] = deque(maxlen=MAX_LOG_ENTRIES)
-_sse_subscribers: list[asyncio.Queue] = []
-
-
-def _broadcast(event: dict):
-    for queue in _sse_subscribers:
-        try:
-            queue.put_nowait(event)
-        except asyncio.QueueFull:
-            pass
 
 
 def log_step(step_name: str, run_id: str = "", **extra) -> str:
@@ -32,7 +25,7 @@ def log_step(step_name: str, run_id: str = "", **extra) -> str:
         **extra,
     }
     _log_buffer.append(entry)
-    _broadcast(entry)
+    event_bus.publish(CHANNEL, entry)
     return entry_id
 
 
@@ -48,7 +41,7 @@ def log_step_end(entry_id: str, output: str = "", error: str = ""):
                 entry["output"] = str(output)[:500]
             entry["duration_ms"] = int((time.time() - entry["start_time"]) * 1000)
             event_type = "tool_error" if error else "tool_end"
-            _broadcast({"type": event_type, **entry})
+            event_bus.publish(CHANNEL, {"type": event_type, **entry})
             return
 
 
@@ -59,7 +52,7 @@ def log_pipeline_event(event_type: str, **data):
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         **data,
     }
-    _broadcast(event)
+    event_bus.publish(CHANNEL, event)
 
 
 def get_logs(limit: int = 100) -> list[dict]:
@@ -68,11 +61,9 @@ def get_logs(limit: int = 100) -> list[dict]:
 
 
 def subscribe() -> asyncio.Queue:
-    q = asyncio.Queue(maxsize=200)
-    _sse_subscribers.append(q)
-    return q
+    import asyncio
+    return event_bus.subscribe(CHANNEL)
 
 
 def unsubscribe(q: asyncio.Queue):
-    if q in _sse_subscribers:
-        _sse_subscribers.remove(q)
+    event_bus.unsubscribe(CHANNEL, q)

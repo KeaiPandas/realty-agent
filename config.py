@@ -76,15 +76,13 @@ class Settings:
         )
         if not self.WECHAT_DATA_DIR:
             try:
-                from adapters.wechat_path import detect_wechat_data_dir, persist_data_dir
+                from services.sync.wechat_path import detect_wechat_data_dir, persist_data_dir
                 detected = detect_wechat_data_dir(self.WECHAT_VERSION)
                 if detected:
                     self.WECHAT_DATA_DIR = detected
                     persist_data_dir(detected)
             except Exception:
                 pass
-        self.WECHAT_DB_NAMES = wechat.get("db_names", ["MicroMsg", "ChatMsg"])
-        self.MSG_SCAN_RANGE = int(wechat.get("msg_scan_range", 100))
 
         # ── 同步 ──
         default_lark = os.path.join(
@@ -120,8 +118,6 @@ class Settings:
         self.BOT_POLL_INTERVAL = int(bot.get("poll_interval", 5))
         self.BOT_CONTEXT_MESSAGES = int(bot.get("context_messages", 10))
         self.BOT_DEFAULT_MODE = bot.get("default_mode", "semi_auto")
-        self.BOT_REPLY_DELAY = float(bot.get("reply_delay", 1.0))
-        self.BOT_MAX_CONVERSATIONS = int(bot.get("max_conversations", 50))
 
 
 settings = Settings()

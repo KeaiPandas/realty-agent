@@ -22,7 +22,7 @@ from models import CustomerProfile
 def step_decrypt() -> dict:
     """Step 1: 解密微信数据库"""
     print("[1/4] 解密微信数据库...")
-    from adapters.decrypt import decrypt_all_databases
+    from services.sync.decrypt import decrypt_all_databases
 
     db_paths = decrypt_all_databases()
     print(f"   解密了 {len(db_paths)} 个数据库")
@@ -31,8 +31,8 @@ def step_decrypt() -> dict:
 
 def step_list_contacts(db_paths: dict):
     """Step 2: 列出私聊联系人"""
-    from adapters.extract import get_dm_contacts
-    from adapters.db_layout import get_contact_db
+    from services.sync.extract import get_dm_contacts
+    from services.sync.db_layout import get_contact_db
 
     contact_db = get_contact_db(db_paths)
     if not contact_db:
@@ -50,7 +50,7 @@ def step_list_contacts(db_paths: dict):
 
 def step_extract_dm(db_paths: dict, contact_id: str, date: str | None = None) -> list:
     """Step 2: 提取DM私聊消息"""
-    from adapters.extract import extract_dm_messages
+    from services.sync.extract import extract_dm_messages
 
     print(f"[2/4] 提取私聊消息 (联系人: {contact_id})...")
     messages = extract_dm_messages(db_paths, contact_id, date=date)
@@ -121,7 +121,7 @@ async def run_pipeline(
     db_paths = step_decrypt()
 
     # Step 2: 提取DM消息
-    from adapters.extract import format_dm_messages
+    from services.sync.extract import format_dm_messages
 
     messages = step_extract_dm(db_paths, contact_id, date)
     if not messages:

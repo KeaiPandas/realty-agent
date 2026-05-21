@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from adapters.db_layout import get_contact_db, get_message_dbs
+from services.sync.db_layout import get_contact_db, get_message_dbs
 
 
 MSG_TYPES = {
@@ -25,13 +25,6 @@ def _get_dm_msg_limit() -> int:
     from config import settings
     return settings.DM_MSG_LIMIT
 
-
-def _detect_schema(db_path: str) -> str:
-    """检测数据库是 3.x 还是 4.x 结构"""
-    conn = sqlite3.connect(db_path)
-    cols = {c[1] for c in conn.execute("PRAGMA table_info(contact)").fetchall()}
-    conn.close()
-    return "4.x" if "username" in cols else "3.x"
 
 
 def _find_msg_table(conn) -> str | None:

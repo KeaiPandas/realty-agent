@@ -14,9 +14,10 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
 
-# 微信解密数据库
-adapters/decrypted/
+# 微信解密数据库（任何位置）
+decrypted/
 
 # IDE
 .vscode/
@@ -34,3 +35,7 @@ frontend/dist/
 
 # Claude Code
 .claude/
+
+# SQLite 临时文件
+*.db-journal
+*.db-wal

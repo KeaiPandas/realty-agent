@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from adapters.db_layout import get_contact_db
+from services.sync.db_layout import get_contact_db
 from api.decrypt_coordinator import ensure_decrypted, get_decrypted_paths
 from api.pipeline_state import (
     now, update_run, finish_run, register_run,
@@ -88,7 +88,7 @@ async def list_contacts():
         db_paths = await asyncio.to_thread(ensure_decrypted)
         if not get_contact_db(db_paths):
             raise HTTPException(500, "联系人数据库未解密，请先点击解密")
-        from adapters.extract import get_dm_contacts_with_messages
+        from services.sync.extract import get_dm_contacts_with_messages
         contacts = await asyncio.to_thread(get_dm_contacts_with_messages, db_paths)
         return contacts[:settings.LIST_CONTACTS_LIMIT]
     except HTTPException:
@@ -107,7 +107,7 @@ def _resolve_contact_name(contact_id: str) -> str:
         db_paths = get_decrypted_paths() or {}
         contact_db = get_contact_db(db_paths)
         if contact_db:
-            from adapters.extract import get_contact_nicknames
+            from services.sync.extract import get_contact_nicknames
             nicknames = get_contact_nicknames(contact_db)
             if nicknames.get(contact_id):
                 return nicknames[contact_id]
@@ -136,7 +136,7 @@ async def _execute_pipeline(run_id: str, req: PipelineRequest):
 
         # Step 2: 提取消息
         date_desc = req.date_start and req.date_end and f"{req.date_start}~{req.date_end}" or req.date or "全部"
-        from adapters.extract import extract_dm_messages, format_dm_messages
+        from services.sync.extract import extract_dm_messages, format_dm_messages
         messages = await _run_step(run_id, "extract_dm",
                                    lambda: asyncio.to_thread(
                                        extract_dm_messages, db_paths, req.contact_id,
@@ -204,7 +204,7 @@ async def _execute_pipeline_all(run_id: str, req: PipelineRequest):
                                    lambda r: f"解密 {len(r)} 个数据库")
 
         # Step 2: 获取联系人并逐个处理
-        from adapters.extract import get_dm_contacts_with_messages, extract_dm_messages, format_dm_messages
+        from services.sync.extract import get_dm_contacts_with_messages, extract_dm_messages, format_dm_messages
         from main import step_parse, step_sync_feishu
 
         update_run(run_id, steps={"decrypt_db": "done", "extract_dm": "active"})

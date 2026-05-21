@@ -4,6 +4,7 @@ import {
   fetchBotStatus, startBot, stopBot,
   fetchBotConversations, fetchBotMessages,
   approveReply, rejectReply, sendManualMessage,
+  fetchBotSettings, updateBotSettings,
 } from './api.js';
 
 // ── State ──
@@ -11,11 +12,20 @@ import {
 const botState = {
   status: { running: false, uptime: 0, active_conversations: 0, pending_replies: 0 },
   conversations: [],
+  contactSettings: {},  // { wxid: { mode, enabled } }
   selectedWxid: '',
   messages: {},
   pollTimer: null,
   sseSource: null,
 };
+
+// ── Mode labels ──
+
+const MODE_LABELS = {
+  auto: '全自动',
+  semi_auto: '半自动',
+};
+const MODE_DISABLED = 'disabled';
 
 // ── Control ──
 
@@ -53,6 +63,28 @@ function renderBotControl() {
   info.innerHTML = parts.join(' · ');
 }
 
+// ── Settings ──
+
+async function loadContactSettings() {
+  try {
+    const list = await fetchBotSettings();
+    botState.contactSettings = {};
+    for (const s of list) {
+      botState.contactSettings[s.wxid] = s;
+    }
+  } catch { /* ignore */ }
+}
+
+async function setContactMode(wxid, mode) {
+  const enabled = mode !== MODE_DISABLED;
+  const actualMode = mode === MODE_DISABLED ? 'semi_auto' : mode;
+  try {
+    const result = await updateBotSettings(wxid, actualMode, enabled);
+    botState.contactSettings[wxid] = result;
+  } catch { /* ignore */ }
+  renderConversations();
+}
+
 // ── Conversations ──
 
 async function loadConversations() {
@@ -60,6 +92,12 @@ async function loadConversations() {
     botState.conversations = await fetchBotConversations();
   } catch { /* ignore */ }
   renderConversations();
+}
+
+function getContactMode(wxid) {
+  const s = botState.contactSettings[wxid];
+  if (!s || !s.enabled) return MODE_DISABLED;
+  return s.mode || 'semi_auto';
 }
 
 function renderConversations() {
@@ -75,18 +113,41 @@ function renderConversations() {
     const selected = c.wxid === botState.selectedWxid ? ' selected' : '';
     const pending = c.pending_reply ? ' has-pending' : '';
     const badge = c.pending_reply ? '<div class="conv-badge"></div>' : '';
+    const mode = getContactMode(c.wxid);
+    const modeLabel = mode === MODE_DISABLED ? '关闭' : (MODE_LABELS[mode] || mode);
+    const modeClass = mode === MODE_DISABLED ? 'mode-off' : `mode-${mode}`;
     return `<div class="conv-item${selected}${pending}" data-wxid="${escHtml(c.wxid)}">
       <div class="conv-avatar">${(c.nickname || c.wxid)[0].toUpperCase()}</div>
       <div class="conv-info">
         <div class="conv-name">${escHtml(c.nickname || c.wxid)}</div>
         <div class="conv-preview">${c.last_message_time || ''} · ${c.message_count} 条</div>
       </div>
+      <div class="conv-mode-wrap">
+        <select class="conv-mode-select ${modeClass}" data-wxid="${escHtml(c.wxid)}">
+          <option value="auto" ${mode === 'auto' ? 'selected' : ''}>全自动</option>
+          <option value="semi_auto" ${mode === 'semi_auto' ? 'selected' : ''}>半自动</option>
+          <option value="disabled" ${mode === MODE_DISABLED ? 'selected' : ''}>关闭</option>
+        </select>
+      </div>
       ${badge}
     </div>`;
   }).join('');
 
+  // Click to select conversation (not on the select)
   list.querySelectorAll('.conv-item').forEach(el => {
-    el.addEventListener('click', () => selectConversation(el.dataset.wxid));
+    el.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'SELECT' && e.target.tagName !== 'OPTION') {
+        selectConversation(el.dataset.wxid);
+      }
+    });
+  });
+
+  // Mode change handlers
+  list.querySelectorAll('.conv-mode-select').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      e.stopPropagation();
+      setContactMode(sel.dataset.wxid, sel.value);
+    });
   });
 }
 
@@ -205,12 +266,14 @@ function handleBotEvent(data) {
 
 export async function initBotPanel() {
   await refreshBotStatus();
+  await loadContactSettings();
   await loadConversations();
   connectBotSSE();
 
   // Poll every 10s
   botState.pollTimer = setInterval(async () => {
     await refreshBotStatus();
+    await loadContactSettings();
     await loadConversations();
     if (botState.selectedWxid) {
       await loadMessages(botState.selectedWxid);

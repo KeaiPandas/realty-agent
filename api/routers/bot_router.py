@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from services.wechat_bot import bot
+from services.bot import bot
 
 
 router = APIRouter()

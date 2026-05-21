@@ -1,21 +1,21 @@
 """数据库解密协调 — 内存缓存 → 磁盘缓存 → 重新解密"""
 from pathlib import Path
 
-from adapters.db_layout import get_contact_db
+from services.sync.db_layout import get_contact_db
 from config import settings
 
 _decrypted_db_paths: dict = {}
 
 
 def do_decrypt() -> dict:
-    from adapters.decrypt import decrypt_all_databases
+    from services.sync.decrypt import decrypt_all_databases
     return decrypt_all_databases()
 
 
 def find_existing_decrypted() -> dict[str, str] | None:
     try:
-        from adapters.decrypt import _resolve_version
-        from adapters.db_layout import get_db_layout
+        from services.sync.decrypt import _resolve_version
+        from services.sync.db_layout import get_db_layout
         version = _resolve_version()
         wechat_dir = settings.WECHAT_DATA_DIR
         if not wechat_dir:

@@ -384,7 +384,7 @@ def decrypt_all_databases(config=None) -> dict[str, str]:
         dict: 解密后的数据库路径 {名称: 路径}
     """
     from config import settings
-    from adapters.db_layout import get_db_layout
+    from services.sync.db_layout import get_db_layout
 
     version = _resolve_version()
     print(f"[版本] 检测到微信 {version}")
@@ -392,7 +392,7 @@ def decrypt_all_databases(config=None) -> dict[str, str]:
     # 获取数据目录
     wechat_dir = settings.WECHAT_DATA_DIR
     if not wechat_dir:
-        from adapters.wechat_path import detect_wechat_data_dir, persist_data_dir
+        from services.sync.wechat_path import detect_wechat_data_dir, persist_data_dir
         wechat_dir = detect_wechat_data_dir(version) or ""
         if wechat_dir:
             persist_data_dir(wechat_dir)
@@ -453,3 +453,51 @@ def decrypt_all_databases(config=None) -> dict[str, str]:
                 print(f"  X {name}: {e}")
 
     return decrypted
+
+
+# ── 公共接口（供 bot/monitor 使用） ──────────────────────────
+
+def get_version() -> str:
+    """获取微信版本（公共接口）"""
+    return _resolve_version()
+
+
+def decrypt_single(src_path: str, dec_path: str, keys: dict[str, str] | None = None):
+    """解密单个数据库文件（公共接口）
+
+    keys: 可选的缓存密钥 {db_name: key_hex}，为空时自动提取
+    """
+    version = _resolve_version()
+    src = Path(src_path)
+
+    if version == "4.x":
+        if not keys:
+            from services.sync.db_layout import get_db_layout
+            from config import settings
+            db_files = get_db_layout(Path(settings.WECHAT_DATA_DIR), version)
+            keys = _extract_keys_v4(db_files)
+        db_name = src.stem
+        key = keys.get(db_name)
+        if not key:
+            raise RuntimeError(f"未找到 {db_name} 的密钥")
+        _decrypt_db_v4(src_path, key, dec_path)
+    else:
+        if not keys:
+            wx_info = _get_wx_info_v3()
+            if isinstance(wx_info, list) and wx_info:
+                keys = {"_v3_key": wx_info[0].get("key", "")}
+        key = keys.get("_v3_key", "")
+        if key:
+            _decrypt_db_v3(src_path, key, dec_path)
+
+
+def extract_keys(db_files: dict[str, Path]) -> dict[str, str]:
+    """提取数据库密钥（公共接口）"""
+    version = _resolve_version()
+    if version == "4.x":
+        return _extract_keys_v4(db_files)
+    else:
+        wx_info = _get_wx_info_v3()
+        if isinstance(wx_info, list) and wx_info:
+            return {"_v3_key": wx_info[0].get("key", "")}
+        return {}

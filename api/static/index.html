@@ -5,17 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Realty Agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Noto+Sans+SC:wght@400;500;600&family=Source+Code+Pro:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+SC:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="app">
 
   <header>
-    <h1>Realty <span>Agent</span></h1>
-    <div class="page-nav">
-      <button class="page-tab active" onclick="switchPage('dashboard', this)">Dashboard</button>
-      <button class="page-tab" onclick="switchPage('bot', this)">Bot Panel</button>
+    <div class="header-left">
+      <h1>Realty<span>Agent</span></h1>
+      <div class="header-divider"></div>
+      <div class="page-nav">
+        <button class="page-tab active" onclick="switchPage('dashboard', this)">Dashboard</button>
+        <button class="page-tab" onclick="switchPage('bot', this)">Bot</button>
+      </div>
     </div>
     <div class="conn-badge">
       <div class="conn-dot" id="connDot"></div>
@@ -50,7 +53,7 @@
         <span>~</span>
         <input type="date" id="dateEnd" title="结束日期">
       </div>
-      <label style="font-size:13px;color:var(--text-dim);display:flex;align-items:center;gap:6px">
+      <label class="checkbox-label">
         <input type="checkbox" id="chkParseOnly"> 仅解析
       </label>
       <button class="btn btn-primary" id="btnStart" onclick="startPipeline()">启动管道</button>
@@ -64,7 +67,7 @@
       <div class="panel panel-logs">
         <div class="panel-header">
           <span>工具调用日志</span>
-          <span id="logCount" style="font-family:'Source Code Pro',monospace;color:var(--amber)">0</span>
+          <span class="log-counter" id="logCount">0</span>
         </div>
         <div class="log-list" id="logList">
           <div class="empty">等待管道启动...</div>
@@ -117,13 +120,10 @@
 
   <!-- ═══ Bot Panel Page ═══ -->
   <div id="pageBot" style="display:none">
-    <!-- Bot Control Bar -->
     <div class="bot-control-bar">
       <button class="btn btn-primary" id="botToggleBtn" onclick="toggleBot()">START</button>
       <span class="bot-info" id="botInfo">Stopped · Contacts: 0 active</span>
     </div>
-
-    <!-- Bot Grid: conv list | messages | reply -->
     <div class="bot-grid">
       <div class="conv-list" id="convList">
         <div class="conv-empty">暂无会话</div>
@@ -214,7 +214,6 @@
 </div>
 
 <script type="module">
-  // Import all modules
   import { connectSSE } from './js/sse.js';
   import { refreshHealth } from './js/health.js';
   import { loadTasks, openTaskModal, closeTaskModal, selectScanMode, submitTask } from './js/scheduler.js';
@@ -223,9 +222,13 @@
   import { loadContacts, toggleContactPicker, filterContacts } from './js/contacts.js';
   import { switchTaskTab } from './js/tasks.js';
   import { state, pipelineRuns, onRenderTaskList } from './js/state.js';
-  import { toggleBot, initBotPanel, destroyBotPanel } from './js/bot.js';
 
-  // Expose to window for inline onclick handlers
+  let _botModule = null;
+  async function _loadBot() {
+    if (!_botModule) _botModule = await import('./js/bot.js');
+    return _botModule;
+  }
+
   window.decryptDB = decryptDB;
   window.startPipeline = startPipeline;
   window.toggleContactPicker = toggleContactPicker;
@@ -236,30 +239,27 @@
   window.closeTaskModal = closeTaskModal;
   window.selectScanMode = selectScanMode;
   window.submitTask = submitTask;
-  window.toggleBot = toggleBot;
+  window.toggleBot = async () => { const m = await _loadBot(); m.toggleBot(); };
 
-  // Page switching
-  window.switchPage = function(page, btn) {
+  window.switchPage = async function(page, btn) {
     document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('pageDashboard').style.display = page === 'dashboard' ? '' : 'none';
     document.getElementById('pageBot').style.display = page === 'bot' ? '' : 'none';
     if (page === 'bot') {
-      initBotPanel();
+      const m = await _loadBot();
+      m.initBotPanel();
     } else {
-      destroyBotPanel();
+      if (_botModule) _botModule.destroyBotPanel();
     }
   };
 
-  // Register renderTaskList callback for circular-dep resolution
   const { renderTaskList } = await import('./js/tasks.js');
   onRenderTaskList(renderTaskList);
 
-  // Also expose _stopRun for inline onclick in task cards
   const { stopRun } = await import('./js/pipeline.js');
   window._stopRun = stopRun;
 
-  // Init
   connectSSE();
   refreshHealth();
   loadTasks();
@@ -267,7 +267,6 @@
   setInterval(refreshHealth, 30000);
   setInterval(pollUpdates, 30000);
 
-  // Auto-load contacts if already decrypted
   try {
     const { fetchContacts } = await import('./js/api.js');
     const data = await fetchContacts();
@@ -282,7 +281,6 @@
     }
   } catch (e) { /* not decrypted yet */ }
 
-  // mFreq change listener (was inline in old code)
   document.getElementById('mFreq').addEventListener('change', function() {
     document.getElementById('mCronGroup').style.display = this.value === 'custom' ? 'block' : 'none';
   });

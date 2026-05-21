@@ -48,7 +48,7 @@ def detect_v4_data_dir() -> str | None:
 
 def detect_v3_data_dir() -> str | None:
     try:
-        from adapters.decrypt import _get_wx_info_v3
+        from services.sync.decrypt import _get_wx_info_v3
         wx_info = _get_wx_info_v3()
         if isinstance(wx_info, list) and wx_info:
             return wx_info[0].get("wx_dir", "") or None

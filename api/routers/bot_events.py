@@ -5,7 +5,7 @@ import json
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from services.wechat_bot import subscribe_bot_events, unsubscribe_bot_events
+from services.bot import subscribe_bot_events, unsubscribe_bot_events
 
 
 router = APIRouter()

@@ -25,8 +25,8 @@ def _check_wechat_db() -> dict:
     data_dir = settings.WECHAT_DATA_DIR
     if not data_dir:
         try:
-            from adapters.wechat_path import detect_wechat_data_dir, persist_data_dir
-            from adapters.db_layout import detect_wechat_version
+            from services.sync.wechat_path import detect_wechat_data_dir, persist_data_dir
+            from services.sync.db_layout import detect_wechat_version
             version = detect_wechat_version()
             detected = detect_wechat_data_dir(version)
             if detected:
@@ -60,7 +60,7 @@ def _check_wechat_db() -> dict:
         old_stderr = sys.stderr
         sys.stderr = io.StringIO()
         try:
-            from adapters.db_layout import detect_wechat_version
+            from services.sync.db_layout import detect_wechat_version
             version = detect_wechat_version()
             return {"status": "error", "message": f"检测到微信 {version} 进程，但数据目录自动检测失败，请手动配置 WECHAT_DATA_DIR"}
         finally:
