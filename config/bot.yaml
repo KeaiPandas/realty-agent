@@ -1,0 +1,6 @@
+enabled: false
+poll_interval: 5
+context_messages: 10
+default_mode: semi_auto
+reply_delay: 1.0
+max_conversations: 50

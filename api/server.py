@@ -30,10 +30,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from api.routers import workflow, scheduler_router, health, logs
+from api.routers import workflow, scheduler_router, health, logs, bot_router, bot_events
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(scheduler_router.router, prefix="/api/scheduler", tags=["scheduler"])
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
+app.include_router(bot_router.router, prefix="/api/bot", tags=["bot"])
+app.include_router(bot_events.router, prefix="/api/bot", tags=["bot-events"])
 
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="dashboard")

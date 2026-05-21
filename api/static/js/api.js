@@ -77,3 +77,48 @@ export async function toggleSchedulerTask(id, enabled) {
     body: JSON.stringify({ enabled }),
   });
 }
+
+// ── Bot API ──
+
+export async function fetchBotStatus() {
+  return fetch(API + '/api/bot/status').then(r => r.json());
+}
+
+export async function startBot() {
+  return fetch(API + '/api/bot/start', { method: 'POST' }).then(r => r.json());
+}
+
+export async function stopBot() {
+  return fetch(API + '/api/bot/stop', { method: 'POST' }).then(r => r.json());
+}
+
+export async function fetchBotConversations() {
+  return fetch(API + '/api/bot/conversations').then(r => r.json());
+}
+
+export async function fetchBotMessages(wxid, limit = 50) {
+  return fetch(API + `/api/bot/conversations/${encodeURIComponent(wxid)}/messages?limit=${limit}`).then(r => r.json());
+}
+
+export async function approveReply(wxid, editedReply = '') {
+  const resp = await fetch(API + `/api/bot/conversations/${encodeURIComponent(wxid)}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ edited_reply: editedReply }),
+  });
+  return resp.json();
+}
+
+export async function rejectReply(wxid) {
+  return fetch(API + `/api/bot/conversations/${encodeURIComponent(wxid)}/reject`, {
+    method: 'POST',
+  }).then(r => r.json());
+}
+
+export async function sendManualMessage(wxid, content) {
+  return fetch(API + '/api/bot/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wxid, content }),
+  }).then(r => r.json());
+}

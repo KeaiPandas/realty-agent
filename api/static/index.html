@@ -13,100 +13,130 @@
 
   <header>
     <h1>Realty <span>Agent</span></h1>
+    <div class="page-nav">
+      <button class="page-tab active" onclick="switchPage('dashboard', this)">Dashboard</button>
+      <button class="page-tab" onclick="switchPage('bot', this)">Bot Panel</button>
+    </div>
     <div class="conn-badge">
       <div class="conn-dot" id="connDot"></div>
       <span id="connText">connecting...</span>
     </div>
   </header>
 
-  <!-- Toolbar -->
-  <div class="toolbar">
-    <button class="btn btn-ghost" id="btnDecrypt" onclick="decryptDB()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      解密数据库
-    </button>
-    <span class="decrypt-status" id="decryptStatus"></span>
+  <!-- ═══ Dashboard Page ═══ -->
+  <div id="pageDashboard">
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <button class="btn btn-ghost" id="btnDecrypt" onclick="decryptDB()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        解密数据库
+      </button>
+      <span class="decrypt-status" id="decryptStatus"></span>
 
-    <!-- Contact Picker -->
-    <div class="contact-picker" id="contactPicker">
-      <svg class="contact-picker-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input type="text" class="contact-picker-input" id="cpInput" placeholder="搜索联系人..." readonly onclick="toggleContactPicker()">
-      <div class="contact-picker-dropdown" id="cpDropdown">
-        <div class="contact-picker-search">
-          <input type="text" id="cpSearch" placeholder="输入姓名或备注搜索..." oninput="filterContacts()">
+      <!-- Contact Picker -->
+      <div class="contact-picker" id="contactPicker">
+        <svg class="contact-picker-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" class="contact-picker-input" id="cpInput" placeholder="搜索联系人..." readonly onclick="toggleContactPicker()">
+        <div class="contact-picker-dropdown" id="cpDropdown">
+          <div class="contact-picker-search">
+            <input type="text" id="cpSearch" placeholder="输入姓名或备注搜索..." oninput="filterContacts()">
+          </div>
+          <div class="contact-picker-list" id="cpList"></div>
         </div>
-        <div class="contact-picker-list" id="cpList"></div>
       </div>
+
+      <div class="date-range">
+        <input type="date" id="dateStart" title="开始日期">
+        <span>~</span>
+        <input type="date" id="dateEnd" title="结束日期">
+      </div>
+      <label style="font-size:13px;color:var(--text-dim);display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="chkParseOnly"> 仅解析
+      </label>
+      <button class="btn btn-primary" id="btnStart" onclick="startPipeline()">启动管道</button>
+      <div class="pipeline-status" id="pipelineStatus"></div>
     </div>
 
-    <div class="date-range">
-      <input type="date" id="dateStart" title="开始日期">
-      <span>~</span>
-      <input type="date" id="dateEnd" title="结束日期">
-    </div>
-    <label style="font-size:13px;color:var(--text-dim);display:flex;align-items:center;gap:6px">
-      <input type="checkbox" id="chkParseOnly"> 仅解析
-    </label>
-    <button class="btn btn-primary" id="btnStart" onclick="startPipeline()">启动管道</button>
-    <div class="pipeline-status" id="pipelineStatus"></div>
-  </div>
+    <!-- Main Grid -->
+    <div class="main-grid">
 
-  <!-- Main Grid -->
-  <div class="main-grid">
-
-    <!-- Left: Logs -->
-    <div class="panel panel-logs">
-      <div class="panel-header">
-        <span>工具调用日志</span>
-        <span id="logCount" style="font-family:'Source Code Pro',monospace;color:var(--amber)">0</span>
-      </div>
-      <div class="log-list" id="logList">
-        <div class="empty">等待管道启动...</div>
-      </div>
-    </div>
-
-    <!-- Right Column -->
-    <div class="right-col">
-
-      <!-- Task Status -->
-      <div class="panel">
+      <!-- Left: Logs -->
+      <div class="panel panel-logs">
         <div class="panel-header">
-          <div class="task-tabs">
-            <button class="task-tab active" onclick="switchTaskTab('running',this)">运行中 <span id="taskRunningCount">0</span></button>
-            <button class="task-tab" onclick="switchTaskTab('history',this)">历史 <span id="taskHistoryCount">0</span></button>
+          <span>工具调用日志</span>
+          <span id="logCount" style="font-family:'Source Code Pro',monospace;color:var(--amber)">0</span>
+        </div>
+        <div class="log-list" id="logList">
+          <div class="empty">等待管道启动...</div>
+        </div>
+      </div>
+
+      <!-- Right Column -->
+      <div class="right-col">
+
+        <!-- Task Status -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="task-tabs">
+              <button class="task-tab active" onclick="switchTaskTab('running',this)">运行中 <span id="taskRunningCount">0</span></button>
+              <button class="task-tab" onclick="switchTaskTab('history',this)">历史 <span id="taskHistoryCount">0</span></button>
+            </div>
+          </div>
+          <div class="task-list" id="taskList">
+            <div class="task-empty">暂无任务运行</div>
           </div>
         </div>
-        <div class="task-list" id="taskList">
-          <div class="task-empty">暂无任务运行</div>
-        </div>
-      </div>
 
-      <!-- Health -->
-      <div class="panel">
-        <div class="panel-header">
-          <span>环境状态</span>
-          <button class="btn btn-sm btn-ghost" onclick="refreshHealth()">刷新</button>
-        </div>
-        <div class="panel-body">
-          <div class="health-grid" id="healthGrid"></div>
-        </div>
-      </div>
-
-      <!-- Scheduler -->
-      <div class="panel">
-        <div class="panel-header">
-          <span>定时任务</span>
-          <button class="btn btn-sm btn-primary" onclick="openTaskModal()">新建任务</button>
-        </div>
-        <div class="panel-body">
-          <div id="schedList">
-            <div class="sched-empty">暂无定时任务，点击「新建任务」创建</div>
+        <!-- Health -->
+        <div class="panel">
+          <div class="panel-header">
+            <span>环境状态</span>
+            <button class="btn btn-sm btn-ghost" onclick="refreshHealth()">刷新</button>
+          </div>
+          <div class="panel-body">
+            <div class="health-grid" id="healthGrid"></div>
           </div>
         </div>
-      </div>
 
+        <!-- Scheduler -->
+        <div class="panel">
+          <div class="panel-header">
+            <span>定时任务</span>
+            <button class="btn btn-sm btn-primary" onclick="openTaskModal()">新建任务</button>
+          </div>
+          <div class="panel-body">
+            <div id="schedList">
+              <div class="sched-empty">暂无定时任务，点击「新建任务」创建</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
+
+  <!-- ═══ Bot Panel Page ═══ -->
+  <div id="pageBot" style="display:none">
+    <!-- Bot Control Bar -->
+    <div class="bot-control-bar">
+      <button class="btn btn-primary" id="botToggleBtn" onclick="toggleBot()">START</button>
+      <span class="bot-info" id="botInfo">Stopped · Contacts: 0 active</span>
+    </div>
+
+    <!-- Bot Grid: conv list | messages | reply -->
+    <div class="bot-grid">
+      <div class="conv-list" id="convList">
+        <div class="conv-empty">暂无会话</div>
+      </div>
+      <div class="msg-thread" id="msgThread">
+        <div class="msg-empty">选择一个会话开始查看消息</div>
+      </div>
+      <div class="reply-panel" id="replyPanel">
+        <div class="reply-empty">无待审批回复</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Task Modal (hidden) -->
@@ -193,6 +223,7 @@
   import { loadContacts, toggleContactPicker, filterContacts } from './js/contacts.js';
   import { switchTaskTab } from './js/tasks.js';
   import { state, pipelineRuns, onRenderTaskList } from './js/state.js';
+  import { toggleBot, initBotPanel, destroyBotPanel } from './js/bot.js';
 
   // Expose to window for inline onclick handlers
   window.decryptDB = decryptDB;
@@ -205,6 +236,20 @@
   window.closeTaskModal = closeTaskModal;
   window.selectScanMode = selectScanMode;
   window.submitTask = submitTask;
+  window.toggleBot = toggleBot;
+
+  // Page switching
+  window.switchPage = function(page, btn) {
+    document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('pageDashboard').style.display = page === 'dashboard' ? '' : 'none';
+    document.getElementById('pageBot').style.display = page === 'bot' ? '' : 'none';
+    if (page === 'bot') {
+      initBotPanel();
+    } else {
+      destroyBotPanel();
+    }
+  };
 
   // Register renderTaskList callback for circular-dep resolution
   const { renderTaskList } = await import('./js/tasks.js');

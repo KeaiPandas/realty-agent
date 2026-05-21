@@ -114,5 +114,14 @@ class Settings:
         self.DM_MSG_LIMIT = int(agent.get("dm_msg_limit", 200))
         self.LIST_CONTACTS_LIMIT = int(agent.get("list_contacts_limit", 50))
 
+        # ── Bot ──
+        bot = _load_yaml("bot.yaml")
+        self.BOT_ENABLED = bot.get("enabled", False)
+        self.BOT_POLL_INTERVAL = int(bot.get("poll_interval", 5))
+        self.BOT_CONTEXT_MESSAGES = int(bot.get("context_messages", 10))
+        self.BOT_DEFAULT_MODE = bot.get("default_mode", "semi_auto")
+        self.BOT_REPLY_DELAY = float(bot.get("reply_delay", 1.0))
+        self.BOT_MAX_CONVERSATIONS = int(bot.get("max_conversations", 50))
+
 
 settings = Settings()
