@@ -49,6 +49,8 @@ async def parse_chat_to_profile(
         base_url=settings.LLM_BASE_URL,
         temperature=settings.LLM_TEMPERATURE,
         max_tokens=settings.LLM_MAX_TOKENS,
+        timeout=60,
+        max_retries=1,
     )
 
     # 在prompt中强制要求JSON输出
@@ -58,11 +60,14 @@ async def parse_chat_to_profile(
         "直接输出JSON对象。**"
     )
 
-    response = await llm.ainvoke(
-        [
-            {"role": "system", "content": system_prompt + json_instruction},
-            {"role": "user", "content": user_prompt},
-        ]
+    response = await asyncio.wait_for(
+        llm.ainvoke(
+            [
+                {"role": "system", "content": system_prompt + json_instruction},
+                {"role": "user", "content": user_prompt},
+            ]
+        ),
+        timeout=90,
     )
 
     # 手动解析JSON（GLM可能返回带markdown代码块的JSON）

@@ -6,4 +6,4 @@ api_key: ""           # 留空则从 .env 读取 LLM_API_KEY
 base_url: ""          # 留空则从 .env 读取 LLM_BASE_URL
 model: ""             # 留空则从 .env 读取 LLM_MODEL
 temperature: 0        # 0=确定性输出，1=创造性
-max_tokens: 1500      # 最大输出token数（画像JSON约500-1000 token）
+max_tokens: 8192      # 推理模型(如glm-5)需要大空间，reasoning+output共享此限制

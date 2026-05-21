@@ -220,7 +220,7 @@
   loadTasks();
   loadRuns().then(() => loadHistoricalLogs());
   setInterval(refreshHealth, 30000);
-  setInterval(pollUpdates, 3000);
+  setInterval(pollUpdates, 30000);
 
   // Auto-load contacts if already decrypted
   try {
