@@ -170,32 +170,20 @@ DINGTALK_FIELD_MAP = {
 }
 
 # 飞书多维表格列名 → Pydantic字段名 映射（与飞书表严格对齐）
-# 跳过: 用户编号(auto_number), 创建人/时间/修改人/时间(系统字段),
-#        意向房源记录(link类型), 客户跟进阶段(not_support)
+# 跳过: 用户编号(auto_number), 创建人/时间/修改人/时间(系统字段)
 FEISHU_FIELD_MAP = {
-    # ── 唯一键 ──
     "微信号": "wechat_id",
-    # ── 联系方式 ──
     "联系方式": "phone",
     "微信名称": "wechat_name",
-    # ── ①基本信息 ──
     "客户姓名": "name",
     "年龄": "age",
     "籍贯": "hometown",
-    "子女状况": "children_status",
-    "赡养老人情况": "elder_care",
     "工作单位性质": "employer_type",
     "家庭常住人口": "family_members",
     "婚姻状况": "marital_status",
-    # ── ②客户来源 ──
-    "自媒体获客渠道": "source_channel",
-    "引流入口": "entry_point",
     "首次留资时间": "first_contact_date",
-    "引流关键词": "keyword",
-    # ── ③旅居信息 ──
     "本次来版纳时间": "current_visit_date",
     "本次在版纳停留天数": "stay_duration_days",
-    # ── ④核心购房需求 ──
     "购房核心目的": "purchase_purpose",
     "购房首要原因": "purchase_reason",
     "意向购房区域": "preferred_area",
@@ -204,25 +192,20 @@ FEISHU_FIELD_MAP = {
     "购房意向总价": "budget_total_wan",
     "购房单价范围": "price_per_sqm",
     "购房计划时间": "planned_time",
-    # ── ⑤个人偏好 ──
     "房源朝向偏好": "orientation",
     "生活配套需求": "facilities_needed",
     "出行方式偏好": "travel_mode",
     "额外喜好": "extra_hobbies",
-    # ── ⑥购房预算 ──
     "付款方式": "payment_method",
     "首付预算": "down_payment",
     "贷款月供范围": "monthly_payment",
     "征信情况": "credit_status",
     "资金情况": "fund_status",
-    # ── ⑦跟进沟通 ──
     "首次跟进时间": "first_followup_date",
     "本次跟进时间": "latest_followup_date",
     "跟进核心内容": "followup_content",
-    "客户核心诉求": "demand_update",
     "客户顾虑点": "concern_points",
     "拒绝房源原因": "rejected_reason",
-    # ── ⑨画像总结 ──
     "真正决策人": "decision_maker",
     "客户特殊需求备注": "special_notes",
 }

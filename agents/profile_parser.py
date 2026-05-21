@@ -53,7 +53,8 @@ async def parse_chat_to_profile(
 
     # 在prompt中强制要求JSON输出
     json_instruction = (
-        "\n\n**重要：你的回复必须是纯JSON格式，不要包含markdown代码块标记（不要用```），"
+        "\n\n**重要：只输出有值的字段，省略值为null的字段。"
+        "回复必须是纯JSON格式，不要包含markdown代码块标记（不要用```），"
         "直接输出JSON对象。**"
     )
 
