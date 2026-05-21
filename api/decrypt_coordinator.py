@@ -26,10 +26,14 @@ def find_existing_decrypted() -> dict[str, str] | None:
             return None
         db_layout = get_db_layout(wechat_dir, version)
         existing = {}
-        for name in db_layout:
+        for name, src_path in db_layout.items():
             dec_path = dec_dir / f"{name}.db"
-            if dec_path.exists() and dec_path.stat().st_size > 0:
-                existing[name] = str(dec_path)
+            if not dec_path.exists() or dec_path.stat().st_size == 0:
+                return None
+            # 源文件比解密文件新则缓存失效
+            if Path(src_path).exists() and Path(src_path).stat().st_mtime > dec_path.stat().st_mtime:
+                return None
+            existing[name] = str(dec_path)
         return existing if get_contact_db(existing) else None
     except Exception:
         return None

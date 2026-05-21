@@ -238,7 +238,6 @@ def get_dm_contacts_with_messages(db_paths: dict) -> list[dict]:
                             f"SELECT COUNT(*) FROM {tbl} WHERE local_type = 1"
                         ).fetchone()[0]
                         if cnt > 0:
-                            # 从表名 hash 反查 username
                             table_hash = tbl[4:]
                             for uid, name in sender_map.items():
                                 if hashlib.md5(name.encode()).hexdigest() == table_hash:
@@ -250,6 +249,26 @@ def get_dm_contacts_with_messages(db_paths: dict) -> list[dict]:
             conn.close()
         except Exception:
             pass
+
+    # Fallback: 如果消息表为空（WCDB 压缩导致不可读），从 session 表获取联系人
+    if not contact_msgs:
+        session_db = db_paths.get("session", "")
+        if session_db and Path(session_db).exists():
+            try:
+                conn = sqlite3.connect(session_db)
+                for row in conn.execute(
+                    "SELECT username, last_timestamp FROM SessionTable"
+                ).fetchall():
+                    wxid = row[0]
+                    if (wxid.endswith("@chatroom") or wxid.startswith("gh_")
+                            or wxid in ("filehelper", "floatbottle", "medianote",
+                                        "notifymessage", "weixin", "fmessage",
+                                        "newsapp", "floatbottle")):
+                        continue
+                    contact_msgs[wxid] = row[1] or 1
+                conn.close()
+            except Exception:
+                pass
 
     results = []
     for wxid, msg_count in sorted(contact_msgs.items(), key=lambda x: -x[1]):

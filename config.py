@@ -74,6 +74,15 @@ class Settings:
         self.WECHAT_VERSION = _env(
             "WECHAT_VERSION", wechat.get("version") or "auto"
         )
+        if not self.WECHAT_DATA_DIR:
+            try:
+                from adapters.wechat_path import detect_wechat_data_dir, persist_data_dir
+                detected = detect_wechat_data_dir(self.WECHAT_VERSION)
+                if detected:
+                    self.WECHAT_DATA_DIR = detected
+                    persist_data_dir(detected)
+            except Exception:
+                pass
         self.WECHAT_DB_NAMES = wechat.get("db_names", ["MicroMsg", "ChatMsg"])
         self.MSG_SCAN_RANGE = int(wechat.get("msg_scan_range", 100))
 

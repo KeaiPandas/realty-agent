@@ -392,16 +392,15 @@ def decrypt_all_databases(config=None) -> dict[str, str]:
     # 获取数据目录
     wechat_dir = settings.WECHAT_DATA_DIR
     if not wechat_dir:
-        if version == "3.x":
-            wx_info = _get_wx_info_v3()
-            if isinstance(wx_info, list) and wx_info:
-                wechat_dir = wx_info[0].get("wx_dir", "")
-        # 4.x 必须手动配置 data_dir
-        if not wechat_dir:
-            raise RuntimeError(
-                "无法自动检测微信数据目录，请在 .env 中配置 WECHAT_DATA_DIR\n"
-                "  4.x 路径通常类似: D:\\Wechat Files\\xwechat_files\\wxid_xxx\\xxx"
-            )
+        from adapters.wechat_path import detect_wechat_data_dir, persist_data_dir
+        wechat_dir = detect_wechat_data_dir(version) or ""
+        if wechat_dir:
+            persist_data_dir(wechat_dir)
+    if not wechat_dir:
+        raise RuntimeError(
+            "无法自动检测微信数据目录，请在 .env 中配置 WECHAT_DATA_DIR\n"
+            "  4.x 路径通常类似: D:\\Wechat Files\\xwechat_files\\wxid_xxx\\xxx"
+        )
 
     wechat_dir = Path(wechat_dir)
     output_dir = wechat_dir / "decrypted"

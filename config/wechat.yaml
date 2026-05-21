@@ -1,10 +1,6 @@
-# 微信数据库配置
-# data_dir 留空则自动从进程中检测微信数据目录
-
-version: auto          # 微信版本: "auto"（自动检测）, "3.x", "4.x"
-data_dir: ""           # 微信数据目录，留空自动检测
-# 3.x 数据库文件名（4.x 会自动从 db_storage/ 发现，无需此配置）
+data_dir: D:\Program Files (x86)\xwechat_files\wxid_0it5q0j9xdcc12_b6cc
 db_names:
-  - MicroMsg
-  - ChatMsg
-msg_scan_range: 100    # MSG多分片扫描范围上限（仅 3.x）
+- MicroMsg
+- ChatMsg
+msg_scan_range: 100
+version: auto

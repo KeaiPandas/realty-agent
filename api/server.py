@@ -9,14 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-# 过滤高频轮询请求的 access log
-class _PollingFilter(logging.Filter):
-    _skip = {"/api/logs", "/api/workflow/runs"}
-    def filter(self, record: logging.LogRecord) -> bool:
-        msg = record.getMessage()
-        return not any(s in msg for s in self._skip)
-
-logging.getLogger("uvicorn.access").addFilter(_PollingFilter())
+# 关闭 uvicorn access log（只保留 error 级别）
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 
 @asynccontextmanager

@@ -23,6 +23,17 @@ def _check_wechat_process() -> dict:
 
 def _check_wechat_db() -> dict:
     data_dir = settings.WECHAT_DATA_DIR
+    if not data_dir:
+        try:
+            from adapters.wechat_path import detect_wechat_data_dir, persist_data_dir
+            from adapters.db_layout import detect_wechat_version
+            version = detect_wechat_version()
+            detected = detect_wechat_data_dir(version)
+            if detected:
+                persist_data_dir(detected)
+                data_dir = detected
+        except Exception:
+            pass
     if data_dir:
         data_path = Path(data_dir)
         # 4.x: db_storage/ 目录
@@ -51,7 +62,7 @@ def _check_wechat_db() -> dict:
         try:
             from adapters.db_layout import detect_wechat_version
             version = detect_wechat_version()
-            return {"status": "ok", "message": f"检测到微信 {version} 进程，但未配置数据目录"}
+            return {"status": "error", "message": f"检测到微信 {version} 进程，但数据目录自动检测失败，请手动配置 WECHAT_DATA_DIR"}
         finally:
             sys.stderr = old_stderr
     except Exception as e:
