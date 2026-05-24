@@ -39,3 +39,11 @@ frontend/dist/
 # SQLite 临时文件
 *.db-journal
 *.db-wal
+
+# Runtime logs and local scratch
+logs/
+wxauto_logs/
+@AutomationLog.txt
+
+# Local reference repos used during debugging
+_vendor/

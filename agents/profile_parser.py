@@ -78,6 +78,8 @@ async def parse_chat_to_profile(
         content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
     data = json.loads(content)
+    if not data:
+        raise ValueError("LLM returned an empty customer profile")
 
     # 修正LLM返回的类型偏差
     # 字符串字段：LLM可能返回int

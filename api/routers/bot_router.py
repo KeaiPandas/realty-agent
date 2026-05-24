@@ -22,6 +22,11 @@ class ContactSettingsUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class GlobalSettingsUpdate(BaseModel):
+    mode: str | None = None
+    enabled: bool | None = None
+
+
 @router.get("/status")
 def get_status():
     return bot.get_status()
@@ -75,6 +80,16 @@ def reject_reply(wxid: str):
 @router.get("/settings")
 def get_settings():
     return bot.get_contact_settings_list()
+
+
+@router.get("/settings/global")
+def get_global_settings():
+    return bot.get_global_settings()
+
+
+@router.patch("/settings/global")
+def update_global_settings(req: GlobalSettingsUpdate):
+    return bot.update_global_settings(req.mode, req.enabled)
 
 
 @router.patch("/settings/{wxid}")

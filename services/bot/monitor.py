@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from services.sync.db_layout import get_contact_db, get_message_dbs, get_db_layout
-from services.sync.extract import get_contact_nicknames
+from services.sync.extract import get_contact_nicknames, get_contact_profiles
 from api.decrypt_coordinator import ensure_decrypted
 from config import settings
 
@@ -35,9 +35,21 @@ class Monitor:
         self._decrypted_paths: dict = {}
         self._version: str = ""
         self._wechat_dir: Path | None = None
+        self._wxauto_client = None
+        self._seen_wxauto_ids: dict[str, set[str]] = {}
+        self._wxauto_listener_terms: set[str] = set()
 
     def initialize(self):
         """初始化: 解密数据库、建立映射、记录游标"""
+        from services.sync.decrypt import _resolve_version
+
+        self._version = _resolve_version()
+        if self._version == "3.x":
+            self._initialize_wxauto_monitor()
+            self._check_wxauto_messages()
+            print("[Bot] 3.x monitor initialized via wxauto unread polling")
+            return
+
         self._decrypted_paths = ensure_decrypted()
         self._load_nicknames()
         self._build_source_mapping()
@@ -48,10 +60,15 @@ class Monitor:
                 self._source_mtimes[src] = src_path.stat().st_mtime
 
         self._init_last_seen_ids()
+        self._catch_up_existing_messages()
         print(f"[Bot] 监控 {len(self._src_to_dec)} 个加密源文件")
 
     def check(self):
         """检查加密源文件 mtime 变化 → 重新解密 → 处理新消息"""
+        if self._version == "3.x":
+            self._check_wxauto_messages()
+            return
+
         for src_str, dec_str in self._src_to_dec.items():
             src_path = Path(src_str)
             if not src_path.exists():
@@ -79,7 +96,7 @@ class Monitor:
     def _build_source_mapping(self):
         from services.sync.decrypt import _resolve_version
 
-        self._version = _resolve_version()
+        self._version = self._version or _resolve_version()
         wechat_dir = Path(settings.WECHAT_DATA_DIR)
         self._wechat_dir = wechat_dir
 
@@ -97,7 +114,11 @@ class Monitor:
     def _load_nicknames(self):
         contact_db = get_contact_db(self._decrypted_paths)
         if contact_db:
-            self._conv_mgr.nicknames = get_contact_nicknames(contact_db)
+            profiles = get_contact_profiles(contact_db)
+            if profiles:
+                self._conv_mgr.profiles = profiles
+            else:
+                self._conv_mgr.nicknames = get_contact_nicknames(contact_db)
 
     def _init_last_seen_ids(self):
         msg_dbs = get_message_dbs(self._decrypted_paths)
@@ -115,7 +136,7 @@ class Monitor:
                         row = conn.execute(f"SELECT MAX(local_id) FROM {tbl}").fetchone()
                         if row and row[0]:
                             conv = self._conv_mgr.get_by_table(tbl)
-                            if conv:
+                            if conv and conv.last_seen_local_id <= 0 and not conv.messages:
                                 conv.last_seen_local_id = row[0]
                     except Exception:
                         continue
@@ -136,13 +157,22 @@ class Monitor:
                             ).fetchone()
                             if row and row[0]:
                                 conv = self._conv_mgr.get_or_create(wxid)
-                                if conv:
+                                if conv and conv.last_seen_local_id <= 0 and not conv.messages:
                                     conv.last_seen_local_id = max(
                                         conv.last_seen_local_id, row[0]
                                     )
                         except Exception:
                             continue
                 conn.close()
+            except Exception:
+                continue
+
+    def _catch_up_existing_messages(self):
+        for msg_db in get_message_dbs(self._decrypted_paths):
+            if not Path(msg_db).exists():
+                continue
+            try:
+                self._process_new_messages(msg_db)
             except Exception:
                 continue
 
@@ -275,6 +305,172 @@ class Monitor:
             conn.close()
         except Exception as e:
             print(f"[Bot] 读取消息出错: {e}")
+
+    def _initialize_wxauto_monitor(self):
+        try:
+            from wxauto import WeChat
+        except ImportError as exc:
+            raise RuntimeError("wxauto is required for WeChat 3.x monitoring") from exc
+
+        self._wxauto_client = WeChat()
+        self._ensure_wxauto_listeners()
+
+    def _check_wxauto_messages(self):
+        if self._wxauto_client is None:
+            self._initialize_wxauto_monitor()
+        self._ensure_wxauto_listeners()
+
+        try:
+            session_messages = self._wxauto_client.GetAllNewMessage(max_round=5) or {}
+        except Exception as exc:
+            raise RuntimeError(f"wxauto unread polling failed: {exc}") from exc
+
+        for who, messages in session_messages.items():
+            wxid = self._resolve_contact_key(who)
+            conv = self._conv_mgr.get_or_create(wxid)
+            if who and conv.nickname == conv.wxid:
+                conv.nickname = who
+            for item in messages or []:
+                self._process_wxauto_message(conv, who, item)
+
+        listened_messages = {}
+        get_listen_message = getattr(self._wxauto_client, "GetListenMessage", None)
+        if callable(get_listen_message):
+            try:
+                listened_messages = get_listen_message() or {}
+            except Exception as exc:
+                raise RuntimeError(f"wxauto listener polling failed: {exc}") from exc
+
+        for chat_ref, messages in listened_messages.items():
+            who = getattr(chat_ref, "who", "") or str(chat_ref)
+            wxid = self._resolve_contact_key(who)
+            conv = self._conv_mgr.get_or_create(wxid)
+            if who and conv.nickname == conv.wxid:
+                conv.nickname = who
+            for item in messages or []:
+                self._process_wxauto_message(conv, who, item)
+
+    def _ensure_wxauto_listeners(self):
+        if self._wxauto_client is None:
+            return
+
+        targets: list[str] = []
+        try:
+            current_chat = (self._wxauto_client.CurrentChat() or "").strip()
+        except Exception:
+            current_chat = ""
+        if current_chat:
+            targets.append(current_chat)
+
+        for conv in self._conv_mgr.conversations.values():
+            targets.extend(conv.search_terms or [conv.nickname, conv.wxid])
+
+        for item in self._conv_mgr.get_settings_list():
+            targets.extend(self._conv_mgr.get_search_terms(item["wxid"]))
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for target in targets:
+            value = (target or "").strip()
+            if not value:
+                continue
+            key = value.casefold()
+            if key in seen or key in self._wxauto_listener_terms:
+                continue
+            seen.add(key)
+            deduped.append(value)
+
+        for target in deduped:
+            try:
+                self._wxauto_client.AddListenChat(target)
+                self._wxauto_listener_terms.add(target.casefold())
+            except Exception:
+                continue
+
+    def _process_wxauto_message(self, conv: BotConversation, who: str, item):
+        msg_type = str(getattr(item, "type", "") or "").lower()
+        if msg_type and msg_type not in {"friend"}:
+            return
+
+        content = str(getattr(item, "content", "") or "").strip()
+        if not content or is_nonsense(content) or is_blocked(content):
+            return
+
+        message_id = self._wxauto_message_id(conv.wxid, who, item, content)
+        if self._has_seen_wxauto_message(conv.wxid, message_id):
+            return
+
+        msg = BotMessage(
+            id=message_id,
+            wxid=conv.wxid,
+            content=content,
+            is_from_customer=True,
+            timestamp=self._wxauto_message_timestamp(item),
+        )
+        conv.messages.append(msg)
+        broadcast(
+            {
+                "type": "bot.new_message",
+                "wxid": conv.wxid,
+                "nickname": conv.nickname,
+                "content": msg.content,
+                "is_from_customer": True,
+                "timestamp": msg.timestamp,
+            }
+        )
+        if self._on_customer_msg:
+            self._on_customer_msg(conv, msg)
+
+    def _resolve_contact_key(self, session_name: str) -> str:
+        target = (session_name or "").strip()
+        if not target:
+            return session_name
+        folded = target.casefold()
+
+        for wxid, profile in self._conv_mgr.profiles.items():
+            candidates = [
+                profile.get("wxid", ""),
+                profile.get("display_name", ""),
+                profile.get("remark", ""),
+                profile.get("nickname", ""),
+                profile.get("alias", ""),
+            ]
+            candidates.extend(profile.get("search_terms") or [])
+            if any((candidate or "").strip().casefold() == folded for candidate in candidates):
+                return wxid
+
+        for wxid, nickname in self._conv_mgr.nicknames.items():
+            if (nickname or "").strip().casefold() == folded:
+                return wxid
+
+        return target
+
+    def _has_seen_wxauto_message(self, wxid: str, message_id: str) -> bool:
+        seen = self._seen_wxauto_ids.setdefault(wxid, set())
+        if message_id in seen:
+            return True
+        seen.add(message_id)
+        if len(seen) > 200:
+            self._seen_wxauto_ids[wxid] = set(list(seen)[-100:])
+        return False
+
+    @staticmethod
+    def _wxauto_message_id(wxid: str, who: str, item, content: str) -> str:
+        raw_id = getattr(item, "id", None)
+        if raw_id not in (None, ""):
+            return f"wxauto:{wxid}:{raw_id}"
+        sender = str(getattr(item, "sender", "") or "")
+        digest = hashlib.md5(f"{wxid}|{who}|{sender}|{content}".encode("utf-8")).hexdigest()
+        return f"wxauto:{wxid}:{digest}"
+
+    @staticmethod
+    def _wxauto_message_timestamp(item) -> str:
+        raw_time = getattr(item, "time", None) or getattr(item, "timestamp", None)
+        if isinstance(raw_time, datetime):
+            return raw_time.strftime("%Y-%m-%d %H:%M")
+        if isinstance(raw_time, str) and raw_time.strip():
+            return raw_time.strip()
+        return datetime.now().strftime("%Y-%m-%d %H:%M")
 
     @staticmethod
     def _get_sender_map(conn) -> dict[int, str]:

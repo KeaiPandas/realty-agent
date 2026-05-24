@@ -127,11 +127,27 @@ export async function fetchBotSettings() {
   return fetch(API + '/api/bot/settings').then(r => r.json());
 }
 
+export async function fetchBotGlobalSettings() {
+  return fetch(API + '/api/bot/settings/global').then(r => r.json());
+}
+
 export async function updateBotSettings(wxid, mode, enabled) {
   const body = {};
   if (mode !== undefined) body.mode = mode;
   if (enabled !== undefined) body.enabled = enabled;
   const resp = await fetch(API + `/api/bot/settings/${encodeURIComponent(wxid)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return resp.json();
+}
+
+export async function updateBotGlobalSettings(mode, enabled) {
+  const body = {};
+  if (mode !== undefined) body.mode = mode;
+  if (enabled !== undefined) body.enabled = enabled;
+  const resp = await fetch(API + '/api/bot/settings/global', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

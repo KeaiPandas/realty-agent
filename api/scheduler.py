@@ -1,5 +1,4 @@
-"""定时任务调度 — APScheduler 封装"""
-import asyncio
+"""Scheduler management built on APScheduler."""
 import time
 from pathlib import Path
 
@@ -40,18 +39,31 @@ class SchedulerManager:
     def _add_job(self, task_id: str, task: dict):
         parts = task["cron"].split()
         trigger = CronTrigger(
-            minute=parts[0], hour=parts[1],
-            day=parts[2], month=parts[3], day_of_week=parts[4],
+            minute=parts[0],
+            hour=parts[1],
+            day=parts[2],
+            month=parts[3],
+            day_of_week=parts[4],
         )
         self._scheduler.add_job(
-            _run_scheduled_pipeline, trigger, id=task_id,
+            _run_scheduled_pipeline,
+            trigger,
+            id=task_id,
             args=[task],
             replace_existing=True,
         )
 
-    def create_task(self, task_id: str, cron: str, contact_id: str,
-                    date: str = "", date_start: str = "", date_end: str = "",
-                    scan_mode: str = "today", enabled: bool = True) -> dict:
+    def create_task(
+        self,
+        task_id: str,
+        cron: str,
+        contact_id: str,
+        date: str = "",
+        date_start: str = "",
+        date_end: str = "",
+        scan_mode: str = "today",
+        enabled: bool = True,
+    ) -> dict:
         task = {
             "cron": cron,
             "contact_id": contact_id,
@@ -80,17 +92,12 @@ class SchedulerManager:
             return None
         self._tasks[task_id].update(updates)
         task = self._tasks[task_id]
+        try:
+            self._scheduler.remove_job(task_id)
+        except Exception:
+            pass
         if task.get("enabled", True):
-            try:
-                self._scheduler.remove_job(task_id)
-            except Exception:
-                pass
             self._add_job(task_id, task)
-        else:
-            try:
-                self._scheduler.remove_job(task_id)
-            except Exception:
-                pass
         self._save()
         return task
 
@@ -99,35 +106,36 @@ class SchedulerManager:
 
 
 def _resolve_dates(task: dict) -> tuple[str | None, str | None]:
-    """根据 scan_mode 解析出 date_start / date_end"""
     mode = task.get("scan_mode", "today")
     if mode == "today":
         today = time.strftime("%Y-%m-%d")
         return today, today
-    elif mode == "range" and task.get("date_start") and task.get("date_end"):
+    if mode == "range" and task.get("date_start") and task.get("date_end"):
         return task["date_start"], task["date_end"]
-    elif mode == "all":
+    if mode == "all":
         return None, None
     return None, None
 
 
-def _run_scheduled_pipeline(task: dict):
-    """APScheduler 调用的同步入口"""
+async def _run_scheduled_pipeline(task: dict):
+    """APScheduler coroutine job executed inside the active event loop."""
     contact_id = task.get("contact_id", "")
     if not contact_id:
         return
     date_start, date_end = _resolve_dates(task)
     from api.routers.workflow import PipelineRequest
+
     req = PipelineRequest(
         contact_id=contact_id,
         date_start=date_start,
         date_end=date_end,
     )
-    asyncio.run(_scheduled_async(req))
+    await _scheduled_async(req)
 
 
 async def _scheduled_async(req):
     from api.routers.workflow import _execute_pipeline
+
     run_id = f"sched_{time.strftime('%H%M%S')}"
     await _execute_pipeline(run_id, req)
 

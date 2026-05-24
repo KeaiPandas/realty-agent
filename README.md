@@ -1,190 +1,256 @@
-# Realty Agent
+# Realestate AI Agent
 
-AI房产客服系统 — 微信聊天记录提取 → AI画像解析 → 飞书/钉钉同步 → AI自动回复
+Windows 本地私有化的房产客服辅助系统。
 
-## 功能
+它把微信聊天数据读取、客户画像解析、飞书/钉钉同步、Web 控制台、微信 Bot 自动回复整合到一个项目里，适合本机单账号运行和人工陪跑式迭代。
 
-- **Web仪表盘**：单页可视化控制台，实时监控解密/提取/解析/同步全流程
-- **微信聊天提取**：解密微信 4.x/3.x PC本地数据库，提取私聊(DM)消息记录
-- **AI画像解析**：通过LLM从聊天记录中提取36字段客户画像（结构化JSON）
-- **飞书同步**：按微信号唯一键去重，自动创建/更新飞书多维表格记录
-- **钉钉同步**：自动将客户画像创建/更新到钉钉AI表格
-- **AI自动回复**：微信消息实时监控 + LLM自动生成回复 + pywinauto发送
-  - 全自动模式：AI生成后直接发送
-  - 半自动模式：AI生成建议，人工审批后发送
-  - 支持屏蔽词过滤和无意义消息过滤
-- **定时任务**：支持 cron 定时自动执行扫描任务
-- **提示词可配置**：所有AI提示词存储在 `prompts.yaml`，无需改代码
+## 当前版本
 
-## 快速开始
+- 项目阶段：MVP / 本地单机版
+- 推荐运行环境：Windows 10/11
+- 推荐微信版本：
+  - `3.9.10.19`：当前 Bot 自动发送主线路，使用 `wxauto`
+  - `4.x`：聊天数据提取和解密链路可用，但桌面 RPA 发送仍在继续优化
+- 默认大模型：`glm-5`（OpenAI 兼容接口）
 
-### 前置条件
+## 这版能做什么
 
-- Windows 10/11（微信数据库解密依赖 Windows API）
-- Python 3.12+
-- 微信 PC 版已登录
+- 读取和解密本地微信数据库
+- 列出有消息的微信联系人
+- 提取单联系人私聊消息
+- 用 LLM 从聊天记录生成客户画像 JSON
+- 同步画像到飞书多维表或钉钉 AI 表格
+- 用 Web 控制台查看健康状态、联系人、任务、日志和 Bot 状态
+- 让 Bot 对指定会话做：
+  - `关闭`
+  - `半自动待审批`
+  - `全自动回复`
 
-### 安装
+## 当前 Bot 支持边界
 
-```bash
-git clone <项目仓库地址>
-cd realty-agent
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+### 已验证
 
-### 配置
+- `3.9.10.19 + wxauto`：
+  - 已接入真实发送后端
+  - `文件传输助手` 实发通过
+  - Bot 发送链路可用
+- `4.x + 本地数据库解密`：
+  - 解密、提取、画像、同步链路可用
+  - Web 控制台和健康检查可用
 
-```bash
-cp .env.example .env
-```
+### 仍在完善
 
-编辑 `.env` 填入：
-
-```env
-LLM_API_KEY=你的API密钥          # 必填
-LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-LLM_MODEL=glm-5
-
-WECHAT_DATA_DIR=                 # 留空自动检测
-
-FEISHU_BASE_TOKEN=               # 飞书同步（可选）
-FEISHU_TABLE_ID=
-DINGTALK_BASE_ID=                # 钉钉同步（可选）
-DINGTALK_TABLE_ID=
-```
-
-非敏感参数在 `config/` 下按域拆分：`llm.yaml` / `wechat.yaml` / `sync.yaml` / `agent.yaml` / `bot.yaml`
-
-### 启动
-
-```bash
-.venv\Scripts\activate
-uvicorn api.server:app --reload --port 8000
-```
-
-浏览器打开 http://localhost:8000
-
-### 命令行使用
-
-```bash
-python main.py --list-contacts                # 列出微信私聊联系人
-python main.py --contact <wxid>               # 提取+AI解析+同步飞书
-python main.py --contact <wxid> --date 2026-05-03  # 指定日期
-python main.py --contact <wxid> --parse-only  # 只解析不同步
-python main.py --parse-file <chat.txt>        # 直接解析聊天文件
-```
+- `3.x` 的消息监控已切到 `wxauto` 路线，但真实用户来消息后的全链路还需要继续联调
+- `4.x` 的桌面自动发送仍在做更稳的窗口聚焦和输入控件适配
+- 当前仍默认面向“单账号、前台桌面可交互”的运行方式
 
 ## 项目结构
 
-```
-├── api/                          # Web层（FastAPI + SSE）
-│   ├── server.py                 # 应用入口
-│   ├── event_bus.py              # 统一事件总线（SSE广播）
-│   ├── scheduler.py              # APScheduler 定时任务引擎
-│   ├── tool_logger.py            # 工具调用日志（环形缓冲区）
-│   ├── decrypt_coordinator.py    # 解密协调（内存+磁盘缓存）
-│   ├── routers/
-│   │   ├── workflow.py           # 管道控制（解密→提取→解析→同步）
-│   │   ├── scheduler_router.py   # 定时任务 CRUD
-│   │   ├── health.py             # 环境健康检测
-│   │   ├── logs.py               # 日志历史 + SSE 实时流
-│   │   ├── bot_router.py         # Bot REST API
-│   │   └── bot_events.py         # Bot SSE 事件流
-│   └── static/                   # 前端（vanilla JS + ES Modules）
-│       ├── index.html
-│       ├── style.css
-│       └── js/
-│           ├── api.js            # 后端API调用
-│           ├── bot.js            # Bot面板（会话/消息/审批/模式切换）
-│           ├── state.js          # 共享状态
-│           ├── sse.js            # SSE连接
-│           ├── pipeline.js       # 管道控制
-│           ├── scheduler.js      # 定时任务
-│           ├── health.js         # 健康检测
-│           ├── logs.js           # 日志查看
-│           ├── tasks.js          # 任务列表
-│           └── contacts.js       # 联系人选择
-├── services/
-│   ├── bot/                      # AI自动回复机器人
-│   │   ├── __init__.py           # WeChatBot 编排器 + 全局单例
-│   │   ├── models.py             # 数据模型（BotMessage/Conversation/Settings）
-│   │   ├── monitor.py            # 消息监控（mtime轮询 + 增量解密）
-│   │   ├── responder.py          # LLM回复生成（含屏蔽词/无意义消息过滤）
-│   │   ├── sender.py             # 消息发送（pywinauto UI自动化 + Transport接口）
-│   │   ├── conversation.py       # 会话管理
-│   │   └── events.py             # Bot事件广播
-│   ├── sync/                     # 数据提取 + 同步
-│   │   ├── decrypt.py            # 微信数据库解密（3.x + 4.x）
-│   │   ├── extract.py            # 聊天记录提取（兼容3.x/4.x）
-│   │   ├── db_layout.py          # 数据库布局 + 版本检测
-│   │   ├── wechat_path.py        # 微信数据目录自动检测
-│   │   └── incremental.py        # 增量同步游标（持久化）
-│   ├── feishu_service.py         # 飞书多维表格同步
-│   └── dingtalk_service.py       # 钉钉AI表格同步
-├── agents/
-│   └── profile_parser.py         # AI画像解析（聊天记录 → 36字段JSON）
-├── config/                       # 配置文件
-│   ├── llm.yaml                  # LLM参数
-│   ├── wechat.yaml               # 微信数据库配置
-│   ├── sync.yaml                 # 飞书/钉钉CLI配置
-│   ├── agent.yaml                # Agent行为参数
-│   ├── bot.yaml                  # Bot配置（轮询间隔/模式/屏蔽词）
-│   └── paths.yaml                # 文件路径
-├── tests/
-│   └── test_bot.py               # Bot单元测试（15个）
-├── config.py                     # 配置加载器
-├── models.py                     # 客户画像 Pydantic 模型
-├── prompts.yaml                  # AI提示词配置
-├── main.py                       # CLI入口
-└── requirements.txt              # 依赖
+```text
+api/
+  server.py                  FastAPI 入口
+  decrypt_coordinator.py     微信数据库解密协调
+  scheduler.py               定时任务执行
+  routers/
+    workflow.py              解密/提取/解析/同步工作流
+    bot_router.py            Bot REST API
+    bot_events.py            Bot SSE 事件流
+    scheduler_router.py      定时任务 CRUD
+    health.py                环境健康检查
+    logs.py                  日志查询和实时流
+  static/                    Web 控制台
+
+services/
+  sync/
+    decrypt.py               3.x / 4.x 微信数据库解密
+    extract.py               联系人和聊天记录提取
+    db_layout.py             微信数据库布局识别
+    wechat_path.py           微信数据目录自动探测
+    incremental.py           增量游标持久化
+  bot/
+    __init__.py              Bot 编排和状态管理
+    monitor.py               消息监控
+    responder.py             LLM 回复生成
+    sender.py                发送调度
+    wechat_backends.py       微信自动化后端
+    conversation.py          会话和托管设置管理
+    models.py                Bot 数据模型
+
+agents/
+  profile_parser.py          客户画像解析
+
+config/
+  llm.yaml                   LLM 配置
+  wechat.yaml                微信相关配置
+  sync.yaml                  飞书/钉钉 CLI 配置
+  agent.yaml                 提取与解析配置
+  bot.yaml                   Bot 行为配置
+  paths.yaml                 路径配置
+
+tests/
+  test_bot.py                Bot 回归测试
+
+main.py                      CLI 入口
+config.py                    配置加载
+models.py                    客户画像模型
+prompts.yaml                 提示词配置
 ```
 
-## API 端点
+## 环境要求
 
-| 方法 | 路径 | 功能 |
-|------|------|------|
-| `GET` | `/api/health` | 环境健康检测 |
-| `POST` | `/api/workflow/start` | 启动管道 |
-| `POST` | `/api/workflow/stop` | 停止管道 |
-| `GET` | `/api/workflow/runs` | 运行记录 |
-| `GET` | `/api/workflow/contacts` | 联系人列表 |
-| `GET` | `/api/workflow/decrypt` | 触发解密 |
-| `GET` | `/api/logs/stream` | SSE 实时日志 |
-| `GET` | `/api/logs` | 历史日志 |
-| `POST` | `/api/scheduler/tasks` | 创建定时任务 |
-| `GET` | `/api/scheduler/tasks` | 列出定时任务 |
-| `PATCH` | `/api/scheduler/tasks/:id` | 更新任务 |
-| `DELETE` | `/api/scheduler/tasks/:id` | 删除任务 |
-| `GET` | `/api/bot/status` | Bot运行状态 |
-| `POST` | `/api/bot/start` | 启动Bot |
-| `POST` | `/api/bot/stop` | 停止Bot |
-| `GET` | `/api/bot/conversations` | 会话列表 |
-| `GET` | `/api/bot/conversations/{wxid}/messages` | 消息历史 |
-| `POST` | `/api/bot/conversations/{wxid}/approve` | 审批回复 |
-| `POST` | `/api/bot/conversations/{wxid}/reject` | 拒绝回复 |
-| `GET` | `/api/bot/settings` | 联系人模式配置 |
-| `PATCH` | `/api/bot/settings/{wxid}` | 更新模式 |
-| `POST` | `/api/bot/send` | 手动发消息 |
-| `GET` | `/api/bot/stream` | Bot SSE事件流 |
+- Windows 10/11
+- Python `3.12+`
+- 已登录的微信 PC 客户端
+- GLM / OpenAI 兼容模型 API Key
 
-## 技术栈
+可选依赖：
 
-- **LLM**: GLM-5（OpenAI兼容接口） via LangChain
-- **Web**: FastAPI + Uvicorn + SSE
-- **微信解密**: SQLCipher 4（4.x）/ PyWxDump（3.x）+ Windows API 内存密钥提取
-- **消息发送**: pywinauto UI自动化
-- **飞书**: @larksuite/cli
-- **钉钉**: dws CLI
-- **定时任务**: APScheduler
+- `@larksuite/cli`：同步飞书
+- `dws`：同步钉钉
 
-## 配置优先级
+## 安装
 
-```
-.env 环境变量 > config/*.yaml > 代码默认值
+```powershell
+git clone <your-repo-url> D:\realestate-ai-agent
+cd D:\realestate-ai-agent
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-## License
+## 手动配置
 
-MIT
+先复制环境变量模板：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+至少需要配置：
+
+```env
+LLM_API_KEY=your_glm_api_key
+LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+LLM_MODEL=glm-5
+```
+
+建议补充：
+
+```env
+WECHAT_VERSION=3.x
+WECHAT_DATA_DIR=
+FEISHU_BASE_TOKEN=
+FEISHU_TABLE_ID=
+DINGTALK_BASE_ID=
+DINGTALK_TABLE_ID=
+```
+
+说明：
+
+- `WECHAT_VERSION=3.x`
+  - 适合当前 `wxauto` Bot 线路
+- `WECHAT_VERSION=4.x`
+  - 适合当前数据库提取线路
+- `WECHAT_DATA_DIR`
+  - 留空时会尽量自动探测
+  - 自动探测失败时再手动填写
+
+### `config/bot.yaml` 关键项
+
+```yaml
+enabled: false
+poll_interval: 5
+default_mode: semi_auto
+reply_debounce_seconds: 1.8
+manual_conflict_guard: true
+transport_backend: wxauto
+```
+
+建议当前保持：
+
+- `transport_backend: wxauto`
+- `manual_conflict_guard: true`
+- `default_mode: semi_auto`
+
+## 启动方式
+
+### Web 控制台
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+uvicorn api.server:app --host 127.0.0.1 --port 8000
+```
+
+打开：
+
+[http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+### CLI
+
+列出联系人：
+
+```powershell
+python main.py --list-contacts
+```
+
+提取并解析某个联系人：
+
+```powershell
+python main.py --contact <wxid>
+```
+
+只解析不同步：
+
+```powershell
+python main.py --contact <wxid> --parse-only
+```
+
+直接解析聊天文本文件：
+
+```powershell
+python main.py --parse-file .\chat.txt
+```
+
+## 常用 API
+
+- `GET /api/health`
+- `GET /api/workflow/contacts`
+- `POST /api/workflow/start`
+- `GET /api/bot/status`
+- `POST /api/bot/start`
+- `POST /api/bot/stop`
+- `GET /api/bot/conversations`
+- `PATCH /api/bot/settings/global`
+- `PATCH /api/bot/settings/{wxid}`
+- `POST /api/bot/send`
+- `GET /api/bot/stream`
+
+## 测试
+
+```powershell
+python -m pytest tests\test_bot.py -q
+```
+
+当前离线 Bot 回归覆盖了：
+
+- 自动接管模式
+- 半自动审批
+- 发送失败回退
+- 全局设置与单会话覆写
+- 调度器事件循环修复
+- 画像空结果保护
+- 3.x `wxauto` 监控映射逻辑
+
+## 已知注意事项
+
+- 这个项目默认运行在本地真实 Windows 桌面，不适合无头服务器
+- 自动发送阶段依赖已登录微信和可交互桌面
+- 不建议把真实生产客户会话直接一键开成全自动，建议先从 `semi_auto` 起步
+- `3.x` 降级运行时，可能需要额外处理微信客户端自动升级
+- `_vendor/` 仅作为本地参考代码来源，不属于项目运行必需部分
+
+## 明天继续前建议
+
+- 保留当前 `3.9.10.19` 环境
+- 不要删 `.env`、`config/bot.yaml` 和当前微信登录态
+- 如果要继续联调真实自动回复，优先用测试联系人或文件传输助手

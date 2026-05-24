@@ -8,9 +8,11 @@ pycryptodome
 pymem
 psutil
 pywin32
+pyperclip
 pyyaml
 fastapi>=0.115
 uvicorn[standard]>=0.30
 apscheduler>=3.10
 httpx>=0.27
 pywinauto>=0.6.8
+wxauto @ git+https://github.com/cluic/wxauto.git

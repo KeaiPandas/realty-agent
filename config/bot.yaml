@@ -2,6 +2,17 @@ enabled: false
 poll_interval: 5
 context_messages: 10
 default_mode: semi_auto
+reply_debounce_seconds: 1.8
+think_delay_min: 0.8
+think_delay_max: 2.4
+segment_count_min: 1
+segment_count_max: 3
+segment_delay_min: 0.15
+segment_delay_max: 0.45
+focus_retry_count: 2
+send_retry_count: 1
+manual_conflict_guard: true
+transport_backend: wxauto
 block_words:
   - 测试
   - test

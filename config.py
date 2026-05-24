@@ -118,6 +118,17 @@ class Settings:
         self.BOT_POLL_INTERVAL = int(bot.get("poll_interval", 5))
         self.BOT_CONTEXT_MESSAGES = int(bot.get("context_messages", 10))
         self.BOT_DEFAULT_MODE = bot.get("default_mode", "semi_auto")
+        self.BOT_REPLY_DEBOUNCE_SECONDS = float(bot.get("reply_debounce_seconds", 1.8))
+        self.BOT_THINK_DELAY_MIN = float(bot.get("think_delay_min", 0.8))
+        self.BOT_THINK_DELAY_MAX = float(bot.get("think_delay_max", 2.4))
+        self.BOT_SEGMENT_COUNT_MIN = int(bot.get("segment_count_min", 1))
+        self.BOT_SEGMENT_COUNT_MAX = int(bot.get("segment_count_max", 3))
+        self.BOT_SEGMENT_DELAY_MIN = float(bot.get("segment_delay_min", 0.15))
+        self.BOT_SEGMENT_DELAY_MAX = float(bot.get("segment_delay_max", 0.45))
+        self.BOT_FOCUS_RETRY_COUNT = int(bot.get("focus_retry_count", 2))
+        self.BOT_SEND_RETRY_COUNT = int(bot.get("send_retry_count", 1))
+        self.BOT_MANUAL_CONFLICT_GUARD = bool(bot.get("manual_conflict_guard", True))
+        self.BOT_TRANSPORT_BACKEND = str(bot.get("transport_backend", "wxauto_compat"))
 
 
 settings = Settings()

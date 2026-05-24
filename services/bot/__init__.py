@@ -1,34 +1,29 @@
-"""微信 AI 自动回复机器人 — 编排层
-
-组合 monitor / responder / sender / conversation / events 子模块。
-对外接口保持与原 wechat_bot.py 兼容。
-"""
+"""WeChat bot orchestration."""
 import asyncio
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
 
 from config import settings
 
-from services.bot.models import BotMessage, BotConversation
 from services.bot.conversation import ConversationManager
 from services.bot.events import broadcast, subscribe, unsubscribe
+from services.bot.models import BotConversation, BotMessage
 from services.bot.monitor import Monitor
 from services.bot.responder import generate_reply
-from services.bot.sender import PywinautoTransport
+from services.bot.sender import PywinautoTransport, SendOutcome, SenderFailure
 
 
 class WeChatBot:
     def __init__(self, transport=None):
         self._running = False
         self._task: asyncio.Task | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._start_time: float = 0
+        self._reply_tasks: dict[str, asyncio.Task] = {}
         self._conv_mgr = ConversationManager()
         self._transport = transport or PywinautoTransport()
         self._monitor = Monitor(self._conv_mgr, on_customer_msg=self._on_customer_message)
-
-    # ── 公共属性 ──
 
     @property
     def running(self) -> bool:
@@ -42,93 +37,122 @@ class WeChatBot:
     def active_count(self) -> int:
         return self._conv_mgr.active_count
 
-    # ── 状态查询 ──
-
     def get_status(self) -> dict:
         return {
             "running": self._running,
             "uptime": time.time() - self._start_time if self._running else 0,
             "active_conversations": self._conv_mgr.active_count,
             "pending_replies": sum(
-                1 for c in self._conv_mgr.conversations.values()
-                if c.pending_reply and c.pending_reply.reply_status == "pending"
+                1
+                for conv in self._conv_mgr.conversations.values()
+                if conv.pending_reply and conv.pending_reply.reply_status == "pending"
             ),
+            "global_settings": self._conv_mgr.get_global_settings(),
+            "transport_mode": getattr(self._transport, "transport_mode", "unknown"),
         }
 
     def get_conversations(self) -> list[dict]:
         result = []
         for conv in self._conv_mgr.conversations.values():
             pending = conv.pending_reply
-            result.append({
-                "wxid": conv.wxid,
-                "nickname": conv.nickname,
-                "message_count": len(conv.messages),
-                "last_message_time": conv.messages[-1].timestamp if conv.messages else "",
-                "pending_reply": {
-                    "id": pending.id,
-                    "content": pending.content,
-                    "reply": pending.reply,
-                    "reply_status": pending.reply_status,
-                    "timestamp": pending.timestamp,
-                } if pending and pending.reply_status == "pending" else None,
-            })
+            effective = self._conv_mgr.get_effective_settings(conv.wxid)
+            result.append(
+                {
+                    "wxid": conv.wxid,
+                    "nickname": conv.nickname,
+                    "message_count": len(conv.messages),
+                    "last_message_time": conv.messages[-1].timestamp if conv.messages else "",
+                    "effective_mode": effective["mode"] if effective["enabled"] else "disabled",
+                    "mode_source": effective["source"],
+                    "pending_reply": {
+                        "id": pending.id,
+                        "content": pending.content,
+                        "reply": pending.reply,
+                        "reply_status": pending.reply_status,
+                        "reason": pending.reply_status_reason,
+                        "timestamp": pending.timestamp,
+                    }
+                    if pending and pending.reply_status == "pending"
+                    else None,
+                }
+            )
         return result
 
     def get_messages(self, wxid: str, limit: int = 50) -> list[dict]:
         conv = self._conv_mgr.get(wxid)
         if not conv:
             return []
-        msgs = conv.messages[-limit:]
-        return [{
-            "id": m.id,
-            "wxid": m.wxid,
-            "content": m.content,
-            "is_from_customer": m.is_from_customer,
-            "timestamp": m.timestamp,
-            "reply": m.reply,
-            "reply_status": m.reply_status,
-        } for m in msgs]
+        return [
+            {
+                "id": msg.id,
+                "wxid": msg.wxid,
+                "content": msg.content,
+                "is_from_customer": msg.is_from_customer,
+                "timestamp": msg.timestamp,
+                "reply": msg.reply,
+                "reply_status": msg.reply_status,
+                "reply_status_reason": msg.reply_status_reason,
+            }
+            for msg in conv.messages[-limit:]
+        ]
 
     def get_pending(self, wxid: str) -> dict | None:
         conv = self._conv_mgr.get(wxid)
         if not conv or not conv.pending_reply:
             return None
-        p = conv.pending_reply
-        if p.reply_status != "pending":
+        pending = conv.pending_reply
+        if pending.reply_status != "pending":
             return None
         return {
-            "id": p.id,
-            "wxid": p.wxid,
-            "content": p.content,
-            "reply": p.reply,
-            "reply_status": p.reply_status,
-            "timestamp": p.timestamp,
+            "id": pending.id,
+            "wxid": pending.wxid,
+            "content": pending.content,
+            "reply": pending.reply,
+            "reply_status": pending.reply_status,
+            "reason": pending.reply_status_reason,
+            "timestamp": pending.timestamp,
         }
 
-    # ── 联系人设置 ──
-
-    def update_contact_settings(self, wxid: str, mode: str | None = None,
-                                 enabled: bool | None = None) -> dict:
-        return self._conv_mgr.update_settings(wxid, mode, enabled)
+    def update_contact_settings(
+        self, wxid: str, mode: str | None = None, enabled: bool | None = None
+    ) -> dict:
+        result = self._conv_mgr.update_settings(wxid, mode, enabled)
+        broadcast({"type": "bot.contact_settings_updated", "settings": result})
+        return result
 
     def get_contact_settings_list(self) -> list[dict]:
         return self._conv_mgr.get_settings_list()
 
-    # ── 生命周期 ──
+    def update_global_settings(
+        self, mode: str | None = None, enabled: bool | None = None
+    ) -> dict:
+        result = self._conv_mgr.update_global_settings(mode, enabled)
+        broadcast({"type": "bot.global_settings_updated", "settings": result})
+        return result
+
+    def get_global_settings(self) -> dict:
+        return self._conv_mgr.get_global_settings()
 
     async def start(self):
         if self._running:
             return
         self._running = True
+        self._loop = asyncio.get_running_loop()
         self._start_time = time.time()
         self._task = asyncio.create_task(self._monitor_loop())
         broadcast({"type": "bot.status_change", "status": "running"})
-        print("[Bot] 已启动")
+        print("[Bot] started")
 
     async def stop(self):
         if not self._running:
             return
         self._running = False
+        reply_tasks = [task for task in self._reply_tasks.values() if task and not task.done()]
+        for task in reply_tasks:
+            task.cancel()
+        if reply_tasks:
+            await asyncio.gather(*reply_tasks, return_exceptions=True)
+        self._reply_tasks.clear()
         if self._task:
             self._task.cancel()
             try:
@@ -136,30 +160,86 @@ class WeChatBot:
             except asyncio.CancelledError:
                 pass
             self._task = None
+        self._loop = None
         broadcast({"type": "bot.status_change", "status": "stopped"})
-        print("[Bot] 已停止")
+        print("[Bot] stopped")
 
     async def _monitor_loop(self):
         try:
-            self._monitor.initialize()
-        except Exception as e:
-            broadcast({"type": "bot.error", "error": str(e)})
+            await asyncio.to_thread(self._monitor.initialize)
+        except Exception as exc:
+            broadcast({"type": "bot.error", "error": str(exc)})
             self._running = False
             return
 
         while self._running:
             try:
                 await asyncio.to_thread(self._monitor.check)
-            except Exception as e:
-                broadcast({"type": "bot.error", "error": str(e)})
+            except Exception as exc:
+                broadcast({"type": "bot.error", "error": str(exc)})
             await asyncio.sleep(settings.BOT_POLL_INTERVAL)
 
-    # ── 回复路由 ──
-
     def _on_customer_message(self, conv: BotConversation, msg: BotMessage):
-        """Monitor 检测到客户消息时的回调"""
-        cs = self._conv_mgr.get_settings(conv.wxid)
-        mode = cs.mode if cs and cs.enabled else settings.BOT_DEFAULT_MODE
+        if all(existing is not msg and existing.id != msg.id for existing in conv.messages):
+            conv.messages.append(msg)
+        effective = self._conv_mgr.get_effective_settings(conv.wxid)
+        if not effective["enabled"]:
+            return
+        if self._loop and self._loop.is_running():
+            current_loop = None
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+            if current_loop is self._loop:
+                self._schedule_reply_task_on_loop(conv.wxid)
+            else:
+                self._loop.call_soon_threadsafe(self._schedule_reply_task_on_loop, conv.wxid)
+            return
+        self._generate_reply_now(conv.wxid)
+
+    def _schedule_reply_task_on_loop(self, wxid: str):
+        existing = self._reply_tasks.get(wxid)
+        if existing and not existing.done():
+            existing.cancel()
+        task = asyncio.create_task(self._debounced_generate_reply(wxid))
+        self._reply_tasks[wxid] = task
+        conv = self._conv_mgr.get(wxid)
+        if conv:
+            broadcast(
+                {
+                    "type": "bot.reply_scheduled",
+                    "wxid": conv.wxid,
+                    "nickname": conv.nickname,
+                    "delay_seconds": settings.BOT_REPLY_DEBOUNCE_SECONDS,
+                }
+            )
+
+    async def _debounced_generate_reply(self, wxid: str):
+        try:
+            delay = max(0.0, settings.BOT_REPLY_DEBOUNCE_SECONDS)
+            if delay > 0:
+                await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        finally:
+            current = self._reply_tasks.get(wxid)
+            if current is asyncio.current_task():
+                self._reply_tasks.pop(wxid, None)
+
+        self._generate_reply_now(wxid)
+
+    def _generate_reply_now(self, wxid: str):
+        conv = self._conv_mgr.get(wxid)
+        if not conv:
+            return
+        effective = self._conv_mgr.get_effective_settings(conv.wxid)
+        if not effective["enabled"]:
+            return
+        mode = effective["mode"] or settings.BOT_DEFAULT_MODE
+        msg = self._latest_customer_message(conv)
+        if not msg:
+            return
 
         reply = generate_reply(conv, self._conv_mgr)
         if not reply:
@@ -167,91 +247,207 @@ class WeChatBot:
 
         msg.reply = reply
         msg.reply_status = "pending"
+        msg.reply_status_reason = ""
         conv.pending_reply = msg
 
-        broadcast({
-            "type": "bot.reply_generated",
-            "wxid": conv.wxid,
-            "nickname": conv.nickname,
-            "reply": reply,
-            "mode": mode,
-        })
+        broadcast(
+            {
+                "type": "bot.reply_generated",
+                "wxid": conv.wxid,
+                "nickname": conv.nickname,
+                "reply": reply,
+                "mode": mode,
+                "source": effective["source"],
+            }
+        )
 
         if mode == "auto":
-            self._do_send(conv, msg)
+            self._dispatch_auto_send(conv, msg)
 
-    def _do_send(self, conv: BotConversation, msg: BotMessage):
-        try:
-            asyncio.get_event_loop().run_until_complete(
-                self._send_message(conv.wxid, msg.reply)
+    @staticmethod
+    def _latest_customer_message(conv: BotConversation) -> BotMessage | None:
+        for msg in reversed(conv.messages):
+            if msg.is_from_customer:
+                return msg
+        return None
+
+    def _dispatch_auto_send(self, conv: BotConversation, msg: BotMessage):
+        if self._loop and self._loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(
+                self._send_pending_reply(conv, msg), self._loop
             )
-            msg.reply_status = "sent"
+            future.add_done_callback(self._handle_auto_send_result)
+            return
+
+        try:
+            asyncio.run(self._send_pending_reply(conv, msg))
+        except Exception as exc:
+            self._handle_transport_exception(conv, msg, exc)
+
+    def _handle_auto_send_result(self, future):
+        try:
+            future.result()
+        except Exception:
+            # The failure was already translated into bot events inside _send_pending_reply.
+            return
+
+    def _set_pending_reason(self, conv: BotConversation, msg: BotMessage, reason: str):
+        msg.reply_status = "pending"
+        msg.reply_status_reason = reason
+        conv.pending_reply = msg
+
+    def _handle_transport_exception(self, conv: BotConversation, msg: BotMessage, exc: Exception):
+        if isinstance(exc, SenderFailure):
+            reason = exc.reason
+            detail = exc.detail
+        else:
+            reason = "send_failed"
+            detail = str(exc)
+        self._set_pending_reason(conv, msg, reason)
+        broadcast(
+            {
+                "type": "bot.reply_send_failed",
+                "wxid": conv.wxid,
+                "nickname": conv.nickname,
+                "reply": msg.reply,
+                "reason": reason,
+                "detail": detail,
+            }
+        )
+
+    async def _send_pending_reply(self, conv: BotConversation, msg: BotMessage):
+        broadcast(
+            {
+                "type": "bot.reply_send_started",
+                "wxid": conv.wxid,
+                "nickname": conv.nickname,
+                "reply": msg.reply,
+            }
+        )
+
+        try:
+            outcome = await self._send_message(
+                conv.wxid,
+                msg.reply,
+                nickname=conv.nickname,
+                guard_manual_conflict=True,
+                search_terms=self._conv_mgr.get_search_terms(conv.wxid),
+            )
+        except Exception as exc:
+            self._handle_transport_exception(conv, msg, exc)
+            raise
+
+        if outcome.status != "sent":
+            self._set_pending_reason(conv, msg, outcome.reason or "send_failed")
+            broadcast(
+                {
+                    "type": "bot.reply_send_deferred",
+                    "wxid": conv.wxid,
+                    "nickname": conv.nickname,
+                    "reply": msg.reply,
+                    "reason": outcome.reason,
+                    "detail": outcome.detail,
+                }
+            )
+            return
+
+        msg.reply_status = "sent"
+        msg.reply_status_reason = ""
+        if conv.pending_reply is msg:
             conv.pending_reply = None
-            broadcast({
+        broadcast(
+            {
                 "type": "bot.reply_sent",
                 "wxid": conv.wxid,
                 "nickname": conv.nickname,
                 "reply": msg.reply,
-            })
-        except Exception as e:
-            msg.reply_status = "error"
-            broadcast({
-                "type": "bot.error",
-                "error": f"发送失败: {e}",
-                "wxid": conv.wxid,
-            })
-
-    # ── 审批 ──
+            }
+        )
 
     async def approve_reply(self, wxid: str, edited_reply: str = "") -> dict | None:
         conv = self._conv_mgr.get(wxid)
-        if not conv or not conv.pending_reply:
+        if not conv:
             return None
-        p = conv.pending_reply
-        if p.reply_status != "pending":
+        if not conv.pending_reply:
+            await asyncio.sleep(0)
+        scheduled = self._reply_tasks.get(wxid)
+        if scheduled and not scheduled.done():
+            await asyncio.shield(scheduled)
+        if not conv.pending_reply:
+            return None
+        pending = conv.pending_reply
+        if pending.reply_status != "pending":
             return None
 
         if edited_reply:
-            p.reply = edited_reply
+            pending.reply = edited_reply
 
         try:
-            await self._send_message(wxid, p.reply)
-            p.reply_status = "sent"
-            conv.pending_reply = None
-            broadcast({
-                "type": "bot.reply_sent",
-                "wxid": wxid,
-                "nickname": conv.nickname,
-                "reply": p.reply,
-            })
-            return {"status": "sent", "wxid": wxid, "reply": p.reply}
-        except Exception as e:
-            p.reply_status = "error"
-            return {"status": "error", "error": str(e)}
+            outcome = await self._send_message(
+                wxid,
+                pending.reply,
+                nickname=conv.nickname,
+                guard_manual_conflict=False,
+                search_terms=self._conv_mgr.get_search_terms(wxid),
+            )
+            if outcome.status != "sent":
+                pending.reply_status_reason = outcome.reason
+                return {"status": "error", "error": outcome.detail or outcome.reason}
+
+            pending.reply_status = "sent"
+            pending.reply_status_reason = ""
+            if conv.pending_reply is pending:
+                conv.pending_reply = None
+            broadcast(
+                {
+                    "type": "bot.reply_sent",
+                    "wxid": wxid,
+                    "nickname": conv.nickname,
+                    "reply": pending.reply,
+                }
+            )
+            return {"status": "sent", "wxid": wxid, "reply": pending.reply}
+        except Exception as exc:
+            if isinstance(exc, SenderFailure):
+                pending.reply_status_reason = exc.reason
+                return {"status": "error", "error": exc.detail}
+            pending.reply_status_reason = "send_failed"
+            return {"status": "error", "error": str(exc)}
 
     def reject_reply(self, wxid: str) -> dict | None:
         conv = self._conv_mgr.get(wxid)
         if not conv or not conv.pending_reply:
             return None
-        p = conv.pending_reply
-        if p.reply_status != "pending":
+        pending = conv.pending_reply
+        if pending.reply_status != "pending":
             return None
 
-        p.reply_status = "rejected"
-        conv.pending_reply = None
-        broadcast({
-            "type": "bot.reply_rejected",
-            "wxid": wxid,
-            "nickname": conv.nickname,
-        })
+        pending.reply_status = "rejected"
+        pending.reply_status_reason = ""
+        if conv.pending_reply is pending:
+            conv.pending_reply = None
+        broadcast(
+            {
+                "type": "bot.reply_rejected",
+                "wxid": wxid,
+                "nickname": conv.nickname,
+            }
+        )
         return {"status": "rejected", "wxid": wxid}
-
-    # ── 手动发送 ──
 
     async def send_message_manual(self, wxid: str, content: str) -> dict:
         conv = self._conv_mgr.get_or_create(wxid)
         try:
-            await self._send_message(wxid, content)
+            outcome = await self._send_message(
+                wxid,
+                content,
+                nickname=conv.nickname,
+                guard_manual_conflict=False,
+                search_terms=self._conv_mgr.get_search_terms(wxid),
+            )
+            if outcome.status != "sent":
+                return {"status": "error", "error": outcome.detail or outcome.reason}
+
             msg = BotMessage(
                 id=str(uuid.uuid4()),
                 wxid=wxid,
@@ -262,17 +458,30 @@ class WeChatBot:
             )
             conv.messages.append(msg)
             return {"status": "sent", "wxid": wxid, "content": content}
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
+        except Exception as exc:
+            if isinstance(exc, SenderFailure):
+                return {"status": "error", "error": exc.detail}
+            return {"status": "error", "error": str(exc)}
 
-    async def _send_message(self, wxid: str, text: str):
-        await asyncio.to_thread(self._transport.send, wxid, text)
+    async def _send_message(
+        self,
+        wxid: str,
+        text: str,
+        nickname: str = "",
+        guard_manual_conflict: bool = True,
+        search_terms: list[str] | None = None,
+    ) -> SendOutcome:
+        return await asyncio.to_thread(
+            self._transport.send,
+            wxid,
+            text,
+            nickname,
+            guard_manual_conflict,
+            search_terms,
+        )
 
-
-# ── 全局单例 ──
 
 bot = WeChatBot()
 
-# 兼容旧导入路径
 subscribe_bot_events = subscribe
 unsubscribe_bot_events = unsubscribe
