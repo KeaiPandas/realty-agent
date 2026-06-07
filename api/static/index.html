@@ -2,289 +2,538 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Realty Agent</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Realty Agent · 线索情报看板</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+SC:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════
+   DESIGN TOKENS
+   ═══════════════════════════════════════════════ */
+:root {
+  --bg-body: #0a0a0b;
+  --bg-surface: #111113;
+  --bg-card: #16161a;
+  --bg-card-hover: #1c1c21;
+  --bg-elevated: #1e1e24;
+  --border: rgba(255,255,255,0.06);
+  --border-accent: rgba(201,162,77,0.2);
+  --gold: #c9a24d;
+  --gold-dim: #9a7a3a;
+  --gold-glow: rgba(201,162,77,0.15);
+  --green: #10b981;
+  --green-dim: rgba(16,185,129,0.15);
+  --red: #ef4444;
+  --red-dim: rgba(239,68,68,0.12);
+  --amber: #f59e0b;
+  --amber-dim: rgba(245,158,11,0.12);
+  --blue: #3b82f6;
+  --text-primary: #e8e6e3;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --text-dim: #4b5563;
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-body: 'Noto Sans SC', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px var(--border);
+  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ═══════════════════════════════════════════════
+   RESET & BASE
+   ═══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg-body);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(201,162,77,0.04), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(16,185,129,0.03), transparent);
+  pointer-events: none; z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════ */
+.app-header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(10,10,11,0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+}
+.header-inner {
+  max-width: 1400px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 56px;
+}
+.logo { display: flex; align-items: baseline; gap: 8px; }
+.logo-title { font-family: var(--font-display); font-size: 20px; letter-spacing: 0.02em; color: var(--text-primary); }
+.logo-title span { color: var(--gold); }
+.logo-sub { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.btn-icon {
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-secondary);
+  cursor: pointer; transition: var(--transition); font-size: 18px;
+}
+.btn-icon:hover, .btn-icon:active { background: var(--bg-card); color: var(--gold); border-color: var(--border-accent); }
+
+/* ═══════════════════════════════════════════════
+   TAB NAVIGATION
+   ═══════════════════════════════════════════════ */
+.tab-bar {
+  position: sticky; top: 56px; z-index: 99;
+  background: rgba(10,10,11,0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+.tab-bar-inner { max-width: 1400px; margin: 0 auto; display: flex; padding: 0 16px; gap: 0; }
+.tab-btn {
+  flex: 1; height: 48px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  background: transparent; border: none;
+  font-family: var(--font-body); font-size: 14px; font-weight: 500;
+  color: var(--text-muted); cursor: pointer; position: relative;
+  transition: color var(--transition);
+}
+.tab-btn::after {
+  content: ''; position: absolute; bottom: 0; left: 20%; right: 20%;
+  height: 2px; background: var(--gold); border-radius: 1px;
+  transform: scaleX(0); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tab-btn.active { color: var(--gold); }
+.tab-btn.active::after { transform: scaleX(1); }
+.tab-btn:active { color: var(--text-secondary); }
+
+/* ═══════════════════════════════════════════════
+   PAGE CONTENT
+   ═══════════════════════════════════════════════ */
+.page-content { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 16px; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* ═══════════════════════════════════════════════
+   KPI CARDS
+   ═══════════════════════════════════════════════ */
+.kpi-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px; margin-bottom: 20px;
+  animation: fadeSlideUp 0.5s ease both;
+}
+.kpi-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 16px 14px;
+  position: relative; overflow: hidden; transition: var(--transition);
+}
+.kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+.kpi-card.green::before { background: linear-gradient(90deg, var(--green), transparent); }
+.kpi-card.gold::before { background: linear-gradient(90deg, var(--gold), transparent); }
+.kpi-card.amber::before { background: linear-gradient(90deg, var(--amber), transparent); }
+.kpi-card.blue::before { background: linear-gradient(90deg, var(--blue), transparent); }
+.kpi-icon { font-size: 20px; margin-bottom: 6px; display: block; }
+.kpi-value { font-family: var(--font-display); font-size: 32px; line-height: 1; margin-bottom: 4px; }
+.kpi-card.green .kpi-value { color: var(--green); }
+.kpi-card.gold .kpi-value { color: var(--gold); }
+.kpi-card.amber .kpi-value { color: var(--amber); }
+.kpi-card.blue .kpi-value { color: var(--blue); }
+.kpi-label { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); letter-spacing: 0.04em; }
+
+/* ═══════════════════════════════════════════════
+   BRIEFING CARD
+   ═══════════════════════════════════════════════ */
+.briefing-card {
+  background: var(--bg-card); border: 1px solid var(--border-accent);
+  border-radius: var(--radius-md); margin-bottom: 20px; overflow: hidden;
+  animation: fadeSlideUp 0.5s 0.1s ease both;
+}
+.briefing-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; cursor: pointer; -webkit-user-select: none; user-select: none;
+}
+.briefing-header:active { background: var(--bg-card-hover); }
+.briefing-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--gold);
+  text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono);
+}
+.briefing-chevron { color: var(--text-muted); font-size: 12px; transition: transform var(--transition); }
+.briefing-card.open .briefing-chevron { transform: rotate(180deg); }
+.briefing-body { max-height: 0; overflow: hidden; transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+.briefing-card.open .briefing-body { max-height: 300px; }
+.briefing-content { padding: 0 16px 16px; font-size: 14px; line-height: 1.7; color: var(--text-secondary); }
+.briefing-content strong { color: var(--text-primary); font-weight: 500; }
+
+/* ═══════════════════════════════════════════════
+   SECTION HEADERS
+   ═══════════════════════════════════════════════ */
+.section { margin-bottom: 24px; }
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 0 2px; }
+.section-title { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-family: var(--font-mono); }
+.section-count { font-family: var(--font-mono); font-size: 12px; color: var(--gold); background: var(--gold-glow); padding: 2px 8px; border-radius: 10px; }
+
+/* ═══════════════════════════════════════════════
+   ACTION CARDS
+   ═══════════════════════════════════════════════ */
+.action-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 8px;
+  display: flex; align-items: flex-start; gap: 12px;
+  cursor: pointer; transition: var(--transition); position: relative; overflow: hidden;
+}
+.action-card:active { background: var(--bg-card-hover); }
+.action-card.done { opacity: 0.4; text-decoration: line-through; }
+.action-checkbox {
+  flex-shrink: 0; width: 22px; height: 22px;
+  border: 2px solid var(--text-dim); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  margin-top: 2px; transition: var(--transition); color: transparent; font-size: 12px;
+}
+.action-card.high .action-checkbox { border-color: var(--red); }
+.action-card.done .action-checkbox { background: var(--green); border-color: var(--green); color: #fff; }
+.action-body { flex: 1; min-width: 0; }
+.action-desc { font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 3px; }
+.action-meta { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+.action-suggestion { font-size: 12px; color: var(--gold-dim); font-style: italic; margin-top: 4px; }
+
+/* ═══════════════════════════════════════════════
+   LEAD CARDS
+   ═══════════════════════════════════════════════ */
+.lead-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 16px; margin-bottom: 10px;
+  cursor: pointer; transition: var(--transition); position: relative;
+}
+.lead-card:active { background: var(--bg-card-hover); transform: scale(0.985); }
+.lead-card::before {
+  content: ''; position: absolute; left: 0; top: 12px; bottom: 12px;
+  width: 3px; border-radius: 0 2px 2px 0;
+}
+.lead-card.risk-high::before { background: var(--red); }
+.lead-card.risk-medium::before { background: var(--amber); }
+.lead-card.risk-low::before { background: var(--green); }
+.lead-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.lead-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.risk-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-family: var(--font-mono); padding: 3px 8px;
+  border-radius: 4px; letter-spacing: 0.03em;
+}
+.risk-badge.high { color: var(--red); background: var(--red-dim); }
+.risk-badge.medium { color: var(--amber); background: var(--amber-dim); }
+.risk-badge.low { color: var(--green); background: var(--green-dim); }
+.risk-dot { width: 6px; height: 6px; border-radius: 50%; }
+.risk-badge.high .risk-dot { background: var(--red); }
+.risk-badge.medium .risk-dot { background: var(--amber); }
+.risk-badge.low .risk-dot { background: var(--green); }
+.lead-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.lead-tag {
+  font-size: 11px; font-family: var(--font-mono); padding: 3px 8px;
+  background: var(--bg-elevated); border-radius: 4px; color: var(--text-secondary); letter-spacing: 0.02em;
+}
+.lead-message {
+  font-size: 13px; color: var(--text-muted); padding: 8px 10px;
+  background: var(--bg-elevated); border-radius: var(--radius-sm);
+  margin-bottom: 8px; border-left: 2px solid var(--text-dim); line-height: 1.5;
+}
+.lead-suggestion {
+  font-size: 12px; color: var(--gold-dim); font-style: italic;
+  display: flex; align-items: center; gap: 4px;
+}
+.lead-suggestion::before { content: '→'; color: var(--gold); font-style: normal; }
+
+/* ═══════════════════════════════════════════════
+   STATS
+   ═══════════════════════════════════════════════ */
+.stats-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 16px; margin-bottom: 12px;
+}
+.stats-subtitle {
+  font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 12px;
+  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.bar-chart { display: flex; flex-direction: column; gap: 8px; }
+.bar-row { display: flex; align-items: center; gap: 10px; }
+.bar-label { width: 42px; font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); text-align: right; flex-shrink: 0; }
+.bar-track { flex: 1; height: 20px; background: var(--bg-elevated); border-radius: 4px; overflow: hidden; position: relative; }
+.bar-fill { height: 100%; border-radius: 4px; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); min-width: 2px; }
+.bar-fill.green { background: linear-gradient(90deg, var(--green), rgba(16,185,129,0.6)); }
+.bar-fill.gold { background: linear-gradient(90deg, var(--gold), rgba(201,162,77,0.6)); }
+.bar-fill.amber { background: linear-gradient(90deg, var(--amber), rgba(245,158,11,0.6)); }
+.bar-fill.blue { background: linear-gradient(90deg, var(--blue), rgba(59,130,246,0.6)); }
+.bar-value { font-size: 12px; font-family: var(--font-mono); color: var(--text-secondary); width: 32px; text-align: right; flex-shrink: 0; }
+.stage-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.stage-pill { display: flex; align-items: center; gap: 6px; background: var(--bg-elevated); padding: 6px 12px; border-radius: 20px; font-size: 13px; }
+.stage-pill-dot { width: 8px; height: 8px; border-radius: 50%; }
+.stage-pill-count { font-family: var(--font-mono); font-weight: 600; color: var(--gold); }
+.empty-state { text-align: center; padding: 32px 16px; color: var(--text-dim); font-size: 13px; }
+.page-placeholder { text-align: center; padding: 48px 16px; }
+.page-placeholder-icon { font-size: 48px; margin-bottom: 16px; }
+.page-placeholder-text { color: var(--text-muted); font-size: 14px; }
+
+/* ═══════════════════════════════════════════════
+   DESKTOP LAYOUT
+   ═══════════════════════════════════════════════ */
+@media (min-width: 768px) {
+  .kpi-grid { grid-template-columns: repeat(4, 1fr); }
+  .kpi-value { font-size: 36px; }
+}
+@media (min-width: 1024px) {
+  .page-content { padding: 24px 32px; }
+  .kpi-grid { gap: 16px; margin-bottom: 24px; }
+  .desktop-columns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; align-items: start; }
+  .desktop-columns .section { margin-bottom: 0; }
+}
+
+/* ═══════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════ */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.section { animation: fadeSlideUp 0.5s ease both; }
+.section:nth-of-type(1) { animation-delay: 0.05s; }
+.section:nth-of-type(2) { animation-delay: 0.15s; }
+.section:nth-of-type(3) { animation-delay: 0.25s; }
+.section:nth-of-type(4) { animation-delay: 0.35s; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--text-dim); border-radius: 2px; }
+</style>
 </head>
 <body>
-<div class="app">
 
-  <header>
-    <div class="header-left">
-      <h1>Realty<span>Agent</span></h1>
-      <div class="header-divider"></div>
-      <div class="page-nav">
-        <button class="page-tab active" onclick="switchPage('dashboard', this)">Dashboard</button>
-        <button class="page-tab" onclick="switchPage('bot', this)">Bot</button>
-      </div>
+<header class="app-header">
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-title">Realty<span>Agent</span></div>
+      <div class="logo-sub">线索情报</div>
     </div>
-    <div class="conn-badge">
-      <div class="conn-dot" id="connDot"></div>
-      <span id="connText">connecting...</span>
-    </div>
-  </header>
-
-  <!-- ═══ Dashboard Page ═══ -->
-  <div id="pageDashboard">
-    <!-- Toolbar -->
-    <div class="toolbar">
-      <button class="btn btn-ghost" id="btnDecrypt" onclick="decryptDB()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        解密数据库
-      </button>
-      <span class="decrypt-status" id="decryptStatus"></span>
-
-      <!-- Contact Picker -->
-      <div class="contact-picker" id="contactPicker">
-        <svg class="contact-picker-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <input type="text" class="contact-picker-input" id="cpInput" placeholder="搜索联系人..." readonly onclick="toggleContactPicker()">
-        <div class="contact-picker-dropdown" id="cpDropdown">
-          <div class="contact-picker-search">
-            <input type="text" id="cpSearch" placeholder="输入姓名或备注搜索..." oninput="filterContacts()">
-          </div>
-          <div class="contact-picker-list" id="cpList"></div>
-        </div>
-      </div>
-
-      <div class="date-range">
-        <input type="date" id="dateStart" title="开始日期">
-        <span>~</span>
-        <input type="date" id="dateEnd" title="结束日期">
-      </div>
-      <label class="checkbox-label">
-        <input type="checkbox" id="chkParseOnly"> 仅解析
-      </label>
-      <button class="btn btn-primary" id="btnStart" onclick="startPipeline()">启动管道</button>
-      <div class="pipeline-status" id="pipelineStatus"></div>
-    </div>
-
-    <!-- Main Grid -->
-    <div class="main-grid">
-
-      <!-- Left: Logs -->
-      <div class="panel panel-logs">
-        <div class="panel-header">
-          <span>工具调用日志</span>
-          <span class="log-counter" id="logCount">0</span>
-        </div>
-        <div class="log-list" id="logList">
-          <div class="empty">等待管道启动...</div>
-        </div>
-      </div>
-
-      <!-- Right Column -->
-      <div class="right-col">
-
-        <!-- Task Status -->
-        <div class="panel">
-          <div class="panel-header">
-            <div class="task-tabs">
-              <button class="task-tab active" onclick="switchTaskTab('running',this)">运行中 <span id="taskRunningCount">0</span></button>
-              <button class="task-tab" onclick="switchTaskTab('history',this)">历史 <span id="taskHistoryCount">0</span></button>
-            </div>
-          </div>
-          <div class="task-list" id="taskList">
-            <div class="task-empty">暂无任务运行</div>
-          </div>
-        </div>
-
-        <!-- Health -->
-        <div class="panel">
-          <div class="panel-header">
-            <span>环境状态</span>
-            <button class="btn btn-sm btn-ghost" onclick="refreshHealth()">刷新</button>
-          </div>
-          <div class="panel-body">
-            <div class="health-grid" id="healthGrid"></div>
-          </div>
-        </div>
-
-        <!-- Scheduler -->
-        <div class="panel">
-          <div class="panel-header">
-            <span>定时任务</span>
-            <button class="btn btn-sm btn-primary" onclick="openTaskModal()">新建任务</button>
-          </div>
-          <div class="panel-body">
-            <div id="schedList">
-              <div class="sched-empty">暂无定时任务，点击「新建任务」创建</div>
-            </div>
-          </div>
-        </div>
-
-      </div>
+    <div class="header-actions">
+      <button class="btn-icon" title="刷新" onclick="refreshAll()">↻</button>
     </div>
   </div>
+</header>
 
-  <!-- ═══ Bot Panel Page ═══ -->
-  <div id="pageBot" style="display:none">
-    <div class="bot-control-bar">
-      <button class="btn btn-primary" id="botToggleBtn" onclick="toggleBot()">START</button>
-      <span class="bot-info" id="botInfo">Stopped · Contacts: 0 active</span>
-    </div>
-    <div id="botGlobalTakeover"></div>
-    <div class="bot-grid">
-      <div class="conv-list" id="convList">
-        <div class="conv-empty">暂无会话</div>
-      </div>
-      <div class="msg-thread" id="msgThread">
-        <div class="msg-empty">选择一个会话开始查看消息</div>
-      </div>
-      <div class="reply-panel" id="replyPanel">
-        <div class="reply-empty">无待审批回复</div>
-      </div>
-    </div>
+<nav class="tab-bar">
+  <div class="tab-bar-inner">
+    <button class="tab-btn active" onclick="switchTab('dashboard',this)">📊 看板</button>
+    <button class="tab-btn" onclick="switchTab('leads',this)">📋 线索</button>
+    <button class="tab-btn" onclick="switchTab('bot',this)">🤖 Bot</button>
   </div>
+</nav>
 
-</div>
-
-<!-- Task Modal (hidden) -->
-<div class="modal-overlay" id="taskModal" style="display:none" onclick="if(event.target===this)closeTaskModal()">
-  <div class="modal">
-    <div class="modal-header">
-      <span class="modal-title">新建定时任务</span>
-      <button class="modal-close" onclick="closeTaskModal()">&times;</button>
+<main class="page-content">
+<div id="pageDashboard" class="page active">
+  <div class="kpi-grid">
+    <div class="kpi-card green"><span class="kpi-icon">🟢</span><div class="kpi-value" id="kpiActive">—</div><div class="kpi-label">活跃客户</div></div>
+    <div class="kpi-card gold"><span class="kpi-icon">💬</span><div class="kpi-value" id="kpiNewMsg">—</div><div class="kpi-label">新消息</div></div>
+    <div class="kpi-card amber"><span class="kpi-icon">⚠️</span><div class="kpi-value" id="kpiPending">—</div><div class="kpi-label">待回复</div></div>
+    <div class="kpi-card blue"><span class="kpi-icon">❄️</span><div class="kpi-value" id="kpiSilent">—</div><div class="kpi-label">沉默客户</div></div>
+  </div>
+  <div class="briefing-card" id="briefingCard">
+    <div class="briefing-header" onclick="toggleBriefing()">
+      <div class="briefing-title">📋 今日情报简报</div>
+      <span class="briefing-chevron">▼</span>
     </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">任务名称</label>
-        <input type="text" class="form-input" id="mTaskName" placeholder="如：每日客户扫描">
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">执行时间</label>
-          <input type="time" class="form-input" id="mTime" value="22:30">
-        </div>
-        <div class="form-group">
-          <label class="form-label">重复频率</label>
-          <select class="form-select" id="mFreq">
-            <option value="daily">每天</option>
-            <option value="weekday">工作日</option>
-            <option value="custom">自定义 Cron</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-group" id="mCronGroup" style="display:none">
-        <label class="form-label">Cron 表达式</label>
-        <input type="text" class="form-input" id="mCron" placeholder="30 22 * * *">
-      </div>
-      <div class="form-group">
-        <label class="form-label">扫描联系人</label>
-        <select class="form-select" id="mContact"><option value="">加载中...</option></select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">扫描范围</label>
-        <div class="radio-group" id="scanModeGroup">
-          <label class="radio-label checked" onclick="selectScanMode('today', this)">
-            <input type="radio" name="scanMode" value="today" checked>
-            <div class="radio-dot"></div>
-            <span>今天新增的聊天记录</span>
-          </label>
-          <label class="radio-label" onclick="selectScanMode('range', this)">
-            <input type="radio" name="scanMode" value="range">
-            <div class="radio-dot"></div>
-            <span>自定义时间段</span>
-          </label>
-          <label class="radio-label" onclick="selectScanMode('all', this)">
-            <input type="radio" name="scanMode" value="all">
-            <div class="radio-dot"></div>
-            <span>全部聊天记录</span>
-          </label>
-        </div>
-        <div class="date-fields" id="mDateFields">
-          <div style="display:flex;gap:10px;width:100%">
-            <input type="date" class="form-input" id="mDateStart" style="flex:1" placeholder="开始日期">
-            <input type="date" class="form-input" id="mDateEnd" style="flex:1" placeholder="结束日期">
-          </div>
-        </div>
-      </div>
-      <div class="form-group">
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
-          <div class="toggle on" id="mEnabled" onclick="this.classList.toggle('on')"></div>
-          创建后立即启用
-        </label>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeTaskModal()">取消</button>
-      <button class="btn btn-primary" onclick="submitTask()">创建任务</button>
-    </div>
+    <div class="briefing-body"><div class="briefing-content" id="briefingContent">加载中...</div></div>
+  </div>
+  <div class="desktop-columns">
+    <div><div class="section" id="actionsSection">
+      <div class="section-header"><span class="section-title">紧急待办</span><span class="section-count" id="actionCount">0</span></div>
+      <div id="actionList"></div>
+    </div></div>
+    <div><div class="section" id="leadsSection">
+      <div class="section-header"><span class="section-title">高优先线索</span><span class="section-count" id="leadCount">0</span></div>
+      <div id="leadList"></div>
+    </div></div>
+    <div><div class="section">
+      <div class="section-header"><span class="section-title">数据概览</span></div>
+      <div class="stats-card"><div class="stats-subtitle">消息时段分布</div><div class="bar-chart" id="msgDistChart"></div></div>
+      <div class="stats-card"><div class="stats-subtitle">客户阶段分布</div><div class="stage-pills" id="stagePills"></div></div>
+    </div></div>
   </div>
 </div>
+<div id="pageLeads" class="page">
+  <div class="page-placeholder"><div class="page-placeholder-icon">📋</div><div class="page-placeholder-text">线索管理页面<br><small style="color:var(--text-dim)">点击看板中的线索卡片查看详情</small></div></div>
+</div>
+<div id="pageBot" class="page">
+  <div class="page-placeholder"><div class="page-placeholder-icon">🤖</div><div class="page-placeholder-text">Bot 控制面板<br><small style="color:var(--text-dim)">请使用原 Dashboard 页面管理 Bot</small></div></div>
+</div>
+</main>
 
-<script type="module">
-  import { connectSSE } from './js/sse.js';
-  import { refreshHealth } from './js/health.js';
-  import { loadTasks, openTaskModal, closeTaskModal, selectScanMode, submitTask } from './js/scheduler.js';
-  import { loadRuns, startPipeline, decryptDB, pollUpdates } from './js/pipeline.js';
-  import { loadHistoricalLogs } from './js/logs.js';
-  import { loadContacts, toggleContactPicker, filterContacts } from './js/contacts.js';
-  import { switchTaskTab } from './js/tasks.js';
-  import { state, pipelineRuns, onRenderTaskList } from './js/state.js';
+<script>
+const state = { stats: null, leads: [], actions: [], briefing: null };
 
-  let _botModule = null;
-  async function _loadBot() {
-    if (!_botModule) _botModule = await import('./js/bot.js');
-    return _botModule;
-  }
+const DEMO = {
+  stats: {
+    kpi: { active_customers: 12, new_messages_today: 38, pending_reply: 5, silent_customers: 8 },
+    message_distribution: { morning: 15, afternoon: 22, evening: 8 },
+    stage_distribution: { initial: 4, intent: 3, showing: 2, closed: 1, churned: 2 },
+  },
+  leads: [
+    { wxid:'wxid_zhang', nickname:'张三', stage:'intent', risk_level:'high', risk_reasons:['沉默7天且有明确意向','预算80万未带看'], silence_days:7, key_profile:{budget:'80万',area:'嘎洒',purpose:'旅居度假'}, message_count:23 },
+    { wxid:'wxid_li', nickname:'李四', stage:'initial', risk_level:'medium', risk_reasons:['超过24h未回复'], silence_days:0, key_profile:{budget:null,area:null,purpose:null}, message_count:3 },
+    { wxid:'wxid_wang', nickname:'王五', stage:'showing', risk_level:'high', risk_reasons:['沉默12天，阶段=showing'], silence_days:12, key_profile:{budget:'120万',area:'曼弄枫',purpose:'自住养老'}, message_count:45 },
+    { wxid:'wxid_zhao', nickname:'赵六', stage:'intent', risk_level:'low', risk_reasons:[], silence_days:0, key_profile:{budget:'60万',area:'嘎栋',purpose:'旅居度假'}, message_count:15 },
+  ],
+  actions: [
+    { id:1, wxid:'wxid_li', nickname:'李四', type:'reply', description:'回复李四的消息', priority:'high', status:'pending', source:'new_message', ai_suggestion:'"有三居吗？" → 推荐嘎洒89㎡三居' },
+    { id:2, wxid:'wxid_wang', nickname:'王五', type:'activate', description:'激活沉默客户王五（12天未联系）', priority:'high', status:'pending', source:'risk_engine', ai_suggestion:'发送问候消息，询问是否有新的需求' },
+    { id:3, wxid:'wxid_zhang', nickname:'张三', type:'followup', description:'跟进张三（计划跟进日已过）', priority:'high', status:'pending', source:'risk_engine', ai_suggestion:'回复价格并推荐嘎洒项目' },
+    { id:4, wxid:'wxid_zhao', nickname:'赵六', type:'confirm', description:'确认赵六行程', priority:'medium', status:'pending', source:'new_message', ai_suggestion:'' },
+  ],
+  briefing: {
+    date: new Date().toISOString().slice(0,10),
+    summary: '今日新增 <strong>3 条线索</strong>，2 位客户超过 7 天未回复。<strong>张三</strong>预算 80 万意向嘎洒，建议今天带看。<strong>王五</strong>上周说本周来版纳，提醒确认行程。',
+  },
+};
 
-  window.decryptDB = decryptDB;
-  window.startPipeline = startPipeline;
-  window.toggleContactPicker = toggleContactPicker;
-  window.filterContacts = filterContacts;
-  window.switchTaskTab = switchTaskTab;
-  window.refreshHealth = refreshHealth;
-  window.openTaskModal = openTaskModal;
-  window.closeTaskModal = closeTaskModal;
-  window.selectScanMode = selectScanMode;
-  window.submitTask = submitTask;
-  window.toggleBot = async () => { const m = await _loadBot(); m.toggleBot(); };
+async function apiFetch(path) {
+  try { const r = await fetch('/api/leads' + path); if (r.ok) return await r.json(); } catch(e) {}
+  return null;
+}
 
-  window.switchPage = async function(page, btn) {
-    document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('pageDashboard').style.display = page === 'dashboard' ? '' : 'none';
-    document.getElementById('pageBot').style.display = page === 'bot' ? '' : 'none';
-    if (page === 'bot') {
-      const m = await _loadBot();
-      m.initBotPanel();
-    } else {
-      if (_botModule) _botModule.destroyBotPanel();
-    }
-  };
+async function refreshAll() {
+  const [stats, leadsData, actionsData, briefingData] = await Promise.all([
+    apiFetch('/stats'), apiFetch('/risk'), apiFetch('/actions'), apiFetch('/briefing'),
+  ]);
+  state.stats = stats || DEMO.stats;
+  state.leads = leadsData?.leads || DEMO.leads;
+  state.actions = actionsData?.actions || DEMO.actions;
+  state.briefing = briefingData || DEMO.briefing;
+  renderKPI(); renderBriefing(); renderActions(); renderLeads(); renderStats();
+}
 
-  const { renderTaskList } = await import('./js/tasks.js');
-  onRenderTaskList(renderTaskList);
+function renderKPI() {
+  const k = state.stats.kpi;
+  document.getElementById('kpiActive').textContent = k.active_customers;
+  document.getElementById('kpiNewMsg').textContent = k.new_messages_today;
+  document.getElementById('kpiPending').textContent = k.pending_reply;
+  document.getElementById('kpiSilent').textContent = k.silent_customers;
+}
 
-  const { stopRun } = await import('./js/pipeline.js');
-  window._stopRun = stopRun;
+function renderBriefing() {
+  document.getElementById('briefingContent').innerHTML = state.briefing.summary || '暂无简报';
+}
 
-  connectSSE();
-  refreshHealth();
-  loadTasks();
-  loadRuns().then(() => loadHistoricalLogs());
-  setInterval(refreshHealth, 30000);
-  setInterval(pollUpdates, 30000);
+function toggleBriefing() { document.getElementById('briefingCard').classList.toggle('open'); }
 
-  try {
-    const { fetchContacts } = await import('./js/api.js');
-    const data = await fetchContacts();
-    if (data && Array.isArray(data) && data.length > 0) {
-      state.contactsList = data;
-      const cpInput = document.getElementById('cpInput');
-      cpInput.value = '';
-      cpInput.placeholder = '搜索联系人...';
-      cpInput.readOnly = false;
-      document.getElementById('decryptStatus').className = 'decrypt-status done';
-      document.getElementById('decryptStatus').textContent = '已加载 ' + data.length + ' 个联系人';
-    }
-  } catch (e) { /* not decrypted yet */ }
+function renderActions() {
+  const pending = state.actions.filter(a => a.status === 'pending');
+  document.getElementById('actionCount').textContent = pending.length;
+  const list = document.getElementById('actionList');
+  if (!pending.length) { list.innerHTML = '<div class="empty-state">✓ 所有待办已完成</div>'; return; }
+  list.innerHTML = pending.map(a => `
+    <div class="action-card ${a.priority}" data-id="${a.id}">
+      <div class="action-checkbox" onclick="completeAction(${a.id}, this)"></div>
+      <div class="action-body">
+        <div class="action-desc">${esc(a.description)}</div>
+        <div class="action-meta">${a.nickname || ''} · ${a.source === 'risk_engine' ? '风险引擎' : '新消息'}</div>
+        ${a.ai_suggestion ? `<div class="action-suggestion">${esc(a.ai_suggestion)}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
 
-  document.getElementById('mFreq').addEventListener('change', function() {
-    document.getElementById('mCronGroup').style.display = this.value === 'custom' ? 'block' : 'none';
-  });
+async function completeAction(id, el) {
+  try { await fetch(`/api/leads/actions/${id}/done`, { method: 'POST' }); } catch(e) {}
+  const card = el.closest('.action-card');
+  card.classList.add('done'); el.textContent = '✓';
+  setTimeout(() => {
+    card.style.opacity = '0'; card.style.transform = 'translateX(60px)'; card.style.transition = '0.3s ease';
+    setTimeout(() => { state.actions = state.actions.filter(a => a.id !== id); renderActions(); }, 300);
+  }, 600);
+}
+
+function renderLeads() {
+  const leads = state.leads;
+  document.getElementById('leadCount').textContent = leads.length;
+  const list = document.getElementById('leadList');
+  if (!leads.length) { list.innerHTML = '<div class="empty-state">暂无客户线索</div>'; return; }
+  const order = { high: 0, medium: 1, low: 2 };
+  leads.sort((a, b) => (order[a.risk_level] || 3) - (order[b.risk_level] || 3));
+  const riskLabels = { high: '高风险', medium: '关注', low: '正常' };
+  list.innerHTML = leads.map(l => {
+    const p = l.key_profile || {};
+    const tags = [];
+    if (p.budget) tags.push(`💰 ${p.budget}`);
+    if (p.area) tags.push(`📍 ${p.area}`);
+    if (p.purpose) tags.push(`🎯 ${p.purpose}`);
+    if (l.silence_days > 0) tags.push(`⏰ ${l.silence_days}天`);
+    const suggestion = (l.risk_reasons || [])[0] || '';
+    return `
+      <div class="lead-card risk-${l.risk_level}">
+        <div class="lead-top">
+          <span class="lead-name">${esc(l.nickname)}</span>
+          <span class="risk-badge ${l.risk_level}"><span class="risk-dot"></span>${riskLabels[l.risk_level]}</span>
+        </div>
+        ${tags.length ? `<div class="lead-tags">${tags.map(t => `<span class="lead-tag">${t}</span>`).join('')}</div>` : ''}
+        ${suggestion ? `<div class="lead-suggestion">${esc(suggestion)}</div>` : ''}
+        ${l.silence_days > 0 ? `<div style="font-size:11px;color:var(--text-dim);margin-top:6px;font-family:var(--font-mono)">沉默 ${l.silence_days} 天</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function renderStats() {
+  const dist = state.stats.message_distribution;
+  const stages = state.stats.stage_distribution;
+  const maxMsg = Math.max(dist.morning, dist.afternoon, dist.evening, 1);
+  const pLabels = { morning: '上午', afternoon: '下午', evening: '晚上' };
+  const pColors = { morning: 'green', afternoon: 'gold', evening: 'amber' };
+  document.getElementById('msgDistChart').innerHTML = Object.entries(dist).map(([k, v]) => `
+    <div class="bar-row">
+      <span class="bar-label">${pLabels[k]}</span>
+      <div class="bar-track"><div class="bar-fill ${pColors[k]}" style="width:${(v/maxMsg*100).toFixed(0)}%"></div></div>
+      <span class="bar-value">${v}</span>
+    </div>`).join('');
+  const sLabels = { initial:'初次咨询', intent:'意向筛选', showing:'带看谈判', closed:'已成交', churned:'已流失' };
+  const sColors = { initial:'var(--blue)', intent:'var(--gold)', showing:'var(--green)', closed:'var(--green)', churned:'var(--red)' };
+  document.getElementById('stagePills').innerHTML = Object.entries(stages).map(([k, v]) => `
+    <div class="stage-pill">
+      <span class="stage-pill-dot" style="background:${sColors[k]||'var(--text-dim)'}"></span>
+      ${sLabels[k]||k}
+      <span class="stage-pill-count">${v}</span>
+    </div>`).join('');
+}
+
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+}
+
+refreshAll();
+if (window.innerWidth >= 768) document.getElementById('briefingCard').classList.add('open');
+setInterval(refreshAll, 30000);
 </script>
 </body>
 </html>
