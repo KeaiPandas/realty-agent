@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Realty Agent · 客户明细</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="/css/base.css" rel="stylesheet">
+<link href="/css/detail.css" rel="stylesheet">
+</head>
+<body>
+
+<div class="app-layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <a href="/" class="sidebar-logo-title">Realty<span>Agent</span></a>
+      <div class="sidebar-logo-sub">线索情报</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a class="sidebar-link active" href="/">
+        <span class="sidebar-link-icon">📊</span> 看板
+      </a>
+      <a class="sidebar-link" href="/bot.html">
+        <span class="sidebar-link-icon">🤖</span> Bot
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Mobile overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <!-- Main Content -->
+  <div class="main-content">
+
+    <!-- Top Bar -->
+    <header class="top-bar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="hamburger" onclick="toggleSidebar()">☰</button>
+        <div class="top-bar-left">
+          <a href="/" style="color:var(--text-muted);text-decoration:none;font-size:13px">← 看板</a>
+          <span style="color:var(--text-dim)">·</span>
+          <span class="top-bar-title" id="detailTitle">客户明细</span>
+        </div>
+      </div>
+      <div class="top-bar-actions">
+        <span class="top-bar-timestamp" id="detailCount">—</span>
+      </div>
+    </header>
+
+    <!-- Page Body -->
+    <div class="page-body">
+      <div style="margin-bottom:16px">
+        <span class="top-bar-subtitle" id="detailSub"></span>
+      </div>
+      <div class="detail-list" id="detailList">
+        <div class="empty-state">加载中...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('open');
+}
+</script>
+<script type="module">
+  import { initDetail } from './js/detail.js';
+  initDetail();
+</script>
+</body>
+</html>

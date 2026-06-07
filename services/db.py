@@ -363,3 +363,121 @@ def get_briefing(date: str) -> dict | None:
     row = conn.execute("SELECT * FROM briefings WHERE date = ?", (date,)).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+# ── Category & Group queries ──
+
+
+def get_customers_by_category(cat: str) -> list[dict]:
+    """按分类返回客户列表，用于明细页。
+    active: 7天内有消息
+    pending: 待回复（有未回复客户消息超24h）
+    silent: 超过7天无联系
+    messages: 按消息量倒序
+    """
+    conn = get_conn()
+    now = time.time()
+    d7 = now - 7 * 86400
+    h24 = now - 24 * 3600
+
+    if cat == "active":
+        rows = conn.execute(
+            "SELECT * FROM customers WHERE last_message_at > ? AND message_count > 0 "
+            "ORDER BY last_message_at DESC",
+            (d7,),
+        ).fetchall()
+    elif cat == "pending":
+        rows = conn.execute(
+            "SELECT * FROM customers "
+            "WHERE last_message_at > ? "
+            "AND (last_reply_at IS NULL OR last_reply_at < last_message_at - ?) "
+            "AND message_count > 0 "
+            "ORDER BY last_message_at DESC",
+            (d7, h24),
+        ).fetchall()
+    elif cat == "silent":
+        rows = conn.execute(
+            "SELECT * FROM customers WHERE last_message_at < ? AND message_count > 0 "
+            "ORDER BY last_message_at ASC",
+            (d7,),
+        ).fetchall()
+    elif cat == "messages":
+        rows = conn.execute(
+            "SELECT * FROM customers WHERE message_count > 0 "
+            "ORDER BY message_count DESC",
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM customers WHERE message_count > 0 "
+            "ORDER BY last_message_at DESC NULLS LAST"
+        ).fetchall()
+
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_group_stats() -> list[dict]:
+    """按 stage 聚合客户数量，返回分组列表。"""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT stage, COUNT(*) as cnt FROM customers GROUP BY stage"
+    ).fetchall()
+    conn.close()
+
+    stage_map = {
+        "initial": {"id": "ungrouped", "name": "初次咨询", "color": "#6b7280"},
+        "intent": {"id": "high_intent", "name": "高意向客户", "color": "#10b981"},
+        "showing": {"id": "showing", "name": "带看谈判中", "color": "#3b82f6"},
+        "closed": {"id": "closed", "name": "已成交", "color": "#c9a24d"},
+    }
+
+    groups = []
+    total = 0
+    for r in rows:
+        stage = r["stage"] or "initial"
+        cnt = r["cnt"]
+        total += cnt
+        meta = stage_map.get(stage, {"id": "ungrouped", "name": stage, "color": "#6b7280"})
+
+        # 沉默预警：stage 有意向但 last_message_at 超过7天
+        # 这里简化处理：直接按 stage 分组
+        groups.append({
+            "id": meta["id"],
+            "name": meta["name"],
+            "color": meta["color"],
+            "count": cnt,
+        })
+
+    # 加上沉默预警分组（stage有意向但沉默>7天）
+    now = time.time()
+    d7 = now - 7 * 86400
+    conn = get_conn()
+    silent_count = conn.execute(
+        "SELECT COUNT(*) FROM customers WHERE last_message_at < ? "
+        "AND stage IN ('intent', 'showing') AND message_count > 0",
+        (d7,),
+    ).fetchone()[0]
+    conn.close()
+    if silent_count > 0:
+        groups.append({
+            "id": "silent",
+            "name": "沉默预警",
+            "color": "#f59e0b",
+            "count": silent_count,
+        })
+
+    return groups
+
+
+def get_customer_messages_stats(wxid: str) -> dict:
+    """获取某个客户的消息统计和最近消息。"""
+    conn = get_conn()
+    msg_count = conn.execute(
+        "SELECT COUNT(*) FROM messages WHERE wxid = ?", (wxid,)
+    ).fetchone()[0]
+    last_msg = conn.execute(
+        "SELECT MAX(timestamp) FROM messages WHERE wxid = ? AND is_from_customer = 1",
+        (wxid,),
+    ).fetchone()[0]
+    conn.close()
+    return {"message_count": msg_count, "last_message_at": last_msg}

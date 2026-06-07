@@ -151,6 +151,17 @@ async def _execute_pipeline(run_id: str, req: PipelineRequest):
             finish_run(run_id, "completed", "无消息")
             return
 
+        # Step 2.5: 写入本地数据库
+        from services.sync.persist import persist_messages, persist_profile as persist_profile_to_db
+        from services.sync.db_layout import get_contact_db
+        from services.sync.extract import get_contact_profiles
+        contact_db = get_contact_db(db_paths)
+        contact_profile = (get_contact_profiles(contact_db).get(req.contact_id) if contact_db else None) or {}
+
+        msg_count = persist_messages(req.contact_id, messages, contact_profile)
+        log_pipeline_event("pipeline_progress", run_id=run_id,
+                           message=f"写入 {msg_count} 条消息到本地数据库")
+
         # Step 3: AI解析
         chat_content = format_dm_messages(req.contact_id, messages, date_desc)
         from main import step_parse
@@ -167,7 +178,10 @@ async def _execute_pipeline(run_id: str, req: PipelineRequest):
             encoding="utf-8",
         )
 
-        # Step 4: 同步飞书
+        # 保存画像到本地数据库
+        persist_profile_to_db(req.contact_id, profile)
+
+        # Step 4: 同步飞书（只在 parse_only=False 时执行）
         if not req.parse_only:
             from main import step_sync_feishu
             result = await asyncio.to_thread(step_sync_feishu, profile)
@@ -205,6 +219,7 @@ async def _execute_pipeline_all(run_id: str, req: PipelineRequest):
 
         # Step 2: 获取联系人并逐个处理
         from services.sync.extract import get_dm_contacts_with_messages, extract_dm_messages, format_dm_messages
+        from services.sync.persist import persist_messages, persist_profile as persist_profile_to_db
         from main import step_parse, step_sync_feishu
 
         update_run(run_id, steps={"decrypt_db": "done", "extract_dm": "active"})
@@ -250,6 +265,9 @@ async def _execute_pipeline_all(run_id: str, req: PipelineRequest):
 
             chat_content = format_dm_messages(display_name, messages, date_desc)
 
+                # 写入本地数据库
+            persist_messages(contact_id, messages, None)
+
             log_pipeline_event("pipeline_progress", run_id=run_id,
                                message=f"[{idx}/{total}] {display_name} — AI 解析中 ({len(messages)} 条)")
             update_run(run_id, message=f"[{idx}/{total}] {display_name} — AI 解析中 ({len(messages)} 条)",
@@ -264,6 +282,9 @@ async def _execute_pipeline_all(run_id: str, req: PipelineRequest):
                     json.dumps(profile.model_dump(exclude_none=True), ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
+
+                    # 保存画像到本地数据库
+                persist_profile_to_db(contact_id, profile)
 
                 if not req.parse_only:
                     await asyncio.to_thread(step_sync_feishu, profile)
@@ -315,3 +336,35 @@ async def _run_step(run_id: str, step_name: str, fn, input_desc: str, output_fn,
         log_step_end(eid, error=str(e))
         update_run(run_id, steps={**_get_steps(run_id), step_name: "failed"})
         raise
+
+
+# ── Manual Feishu Sync ──
+
+
+@router.post("/sync-feishu")
+async def sync_feishu_all():
+    """从本地 DB 读取所有客户画像，逐个同步到飞书。"""
+    from services.db import get_all_customers
+    from models import CustomerProfile
+    from main import step_sync_feishu
+
+    customers = get_all_customers()
+    synced = 0
+    failed = 0
+    for c in customers:
+        profile_json = c.get("profile_json")
+        if not profile_json:
+            continue
+        try:
+            profile = CustomerProfile.model_validate_json(profile_json)
+            # 补充强信号字段
+            if c.get("wechat_id") and not profile.wechat_id:
+                profile.wechat_id = c["wechat_id"]
+            if c.get("nickname") and not profile.wechat_name:
+                profile.wechat_name = c["nickname"]
+            await asyncio.to_thread(step_sync_feishu, profile)
+            synced += 1
+        except Exception as e:
+            failed += 1
+
+    return {"synced": synced, "failed": failed, "total": len(customers)}

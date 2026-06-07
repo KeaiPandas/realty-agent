@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Realty Agent · Bot 管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="/css/base.css" rel="stylesheet">
+<link href="/css/bot.css" rel="stylesheet">
+</head>
+<body>
+
+<div class="app-layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <a href="/" class="sidebar-logo-title">Realty<span>Agent</span></a>
+      <div class="sidebar-logo-sub">线索情报</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a class="sidebar-link" href="/">
+        <span class="sidebar-link-icon">📊</span> 看板
+      </a>
+      <a class="sidebar-link active" href="/bot.html">
+        <span class="sidebar-link-icon">🤖</span> Bot
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Mobile overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <!-- Main Content -->
+  <div class="main-content">
+
+    <!-- Top Bar -->
+    <header class="top-bar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="hamburger" onclick="toggleSidebar()">☰</button>
+        <div class="top-bar-left">
+          <span class="top-bar-title">自动聊天 Bot</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Page Body -->
+    <div class="page-body">
+
+      <!-- Bot Control -->
+      <div class="bot-control-bar">
+        <button class="btn btn-primary" id="botToggleBtn">START</button>
+        <div class="bot-info" id="botInfo">已停止 | 会话 0</div>
+      </div>
+
+      <!-- Global Takeover -->
+      <div id="botGlobalTakeover"></div>
+
+      <!-- Bot Grid -->
+      <div class="bot-grid">
+        <!-- Conversation List -->
+        <div class="conv-list" id="convList">
+          <div class="conv-empty">暂无会话</div>
+        </div>
+
+        <!-- Message Thread -->
+        <div class="msg-thread" id="msgThread">
+          <div class="msg-empty">选择一个会话开始查看消息</div>
+        </div>
+
+        <!-- Reply Panel -->
+        <div class="reply-panel" id="replyPanel">
+          <div class="reply-empty">无待审批回复</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('open');
+}
+</script>
+<script type="module">
+  import { escHtml } from './js/state.js';
+  import {
+    fetchBotStatus, startBot, stopBot,
+    fetchBotConversations, fetchBotMessages,
+    approveReply, rejectReply,
+    fetchBotSettings, fetchBotGlobalSettings,
+    updateBotGlobalSettings, updateBotSettings,
+  } from './js/api.js';
+
+  // Make escHtml available for bot.js
+  window._escHtml = escHtml;
+
+  // Import and init bot panel
+  const { initBotPanel } = await import('./js/bot.js');
+  await initBotPanel();
+</script>
+</body>
+</html>

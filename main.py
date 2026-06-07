@@ -10,6 +10,29 @@ from config import settings
 from models import CustomerProfile
 
 
+def step_persist_db(wxid: str, messages: list, contact_profile: dict | None = None) -> dict:
+    from services.sync.persist import persist_messages
+    print(f'[2.5/4] 写入本地数据库...')
+    result = persist_messages(wxid, messages, contact_profile)
+    print(f'   写入 {result} 条消息')
+    return result
+
+
+def step_persist_profile(wxid: str, profile, contact_profile: dict | None = None) -> None:
+    from services.sync.persist import persist_profile
+    print(f'[3.5/4] 保存画像到本地数据库...')
+    persist_profile(wxid, profile)
+    # 同时写入强信号字段
+    alias = ((contact_profile or {}).get('alias') or '').strip()
+    nickname = ((contact_profile or {}).get('nickname') or (contact_profile or {}).get('display_name') or '').strip()
+    updates = {}
+    if alias and not alias.startswith('wxid_'):
+        updates['wechat_id'] = alias
+    if nickname:
+        updates['wechat_name'] = nickname  # not a db column, skip
+    print(f'   已保存')
+
+
 def step_decrypt() -> dict:
     print('[1/4] 解密微信数据库...')
     from services.sync.decrypt import decrypt_all_databases
@@ -107,6 +130,7 @@ async def run_pipeline(
     contact_id: str,
     date: str | None = None,
     parse_only: bool = False,
+    sync_feishu: bool = False,
 ):
     db_paths = step_decrypt()
 
@@ -126,6 +150,9 @@ async def run_pipeline(
         or contact_profile.get('alias')
         or contact_id
     )
+
+    # 写入本地数据库
+    step_persist_db(contact_id, messages, contact_profile)
 
     chat_content = format_dm_messages(display_name, messages, date)
 
@@ -147,6 +174,7 @@ async def run_pipeline(
     if nickname:
         profile.wechat_name = nickname
 
+    # 保存画像 JSON 文件
     output_path = Path(__file__).parent / settings.DATA_DIR / f'profile_{contact_id}.json'
     output_path.parent.mkdir(exist_ok=True)
     output_path.write_text(
@@ -155,10 +183,14 @@ async def run_pipeline(
     )
     print(f'\n   画像已保存: {output_path}')
 
-    if not parse_only:
+    # 保存画像到本地数据库
+    step_persist_profile(contact_id, profile, contact_profile)
+
+    # 飞书同步需要手动触发（--sync 参数）
+    if sync_feishu:
         step_sync_feishu(profile)
     else:
-        print('\n[4/4] --parse-only 模式，跳过同步')
+        print('\n[4/4] 飞书同步已跳过（使用 --sync 参数或 Web 端按钮触发）')
 
 
 async def run_parse_file(file_path: str, parse_only: bool = True):
@@ -186,6 +218,7 @@ def main():
     parser.add_argument('--contact', type=str, help='联系人 wxid')
     parser.add_argument('--date', type=str, help='指定日期 (YYYY-MM-DD)')
     parser.add_argument('--parse-only', action='store_true', help='只解析不同步飞书')
+    parser.add_argument('--sync', action='store_true', help='同步到飞书（默认跳过）')
     parser.add_argument('--parse-file', type=str, help='直接解析聊天文本文件')
     args = parser.parse_args()
 
@@ -195,7 +228,10 @@ def main():
     elif args.parse_file:
         asyncio.run(run_parse_file(args.parse_file, parse_only=args.parse_only))
     elif args.contact:
-        asyncio.run(run_pipeline(contact_id=args.contact, date=args.date, parse_only=args.parse_only))
+        asyncio.run(run_pipeline(
+            contact_id=args.contact, date=args.date,
+            parse_only=args.parse_only, sync_feishu=args.sync,
+        ))
     else:
         parser.print_help()
 

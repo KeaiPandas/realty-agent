@@ -17,6 +17,14 @@ def generate_briefing() -> dict:
     # 检查缓存（今天已生成过就直接返回）
     cached = get_briefing(today)
     if cached:
+        # content 可能是双重序列化的 JSON 字符串，需要解析
+        raw_content = cached.get("content", "")
+        if isinstance(raw_content, str):
+            try:
+                parsed = json.loads(raw_content)
+                return parsed
+            except (json.JSONDecodeError, TypeError):
+                return {"date": today, "summary": raw_content}
         return cached
 
     # 收集数据

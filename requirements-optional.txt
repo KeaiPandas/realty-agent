@@ -1,0 +1,4 @@
+# WeChat 3.x 支持（可选，需要 Visual Studio Build Tools）
+# pywxdump 依赖 pyaudio，pyaudio 需要 portaudio.h 编译
+# 如果只用 WeChat 4.x，不需要装这个
+pywxdump>=3.1
