@@ -437,13 +437,28 @@ class WeChatBot:
 
     async def send_message_manual(self, wxid: str, content: str) -> dict:
         conv = self._conv_mgr.get_or_create(wxid)
+        # 从 DB 查真实 nickname，搜索词只用 nickname
+        nickname = conv.nickname
+        search_terms = [t for t in conv.search_terms if not t.startswith("wxid_")]
+        if not search_terms or nickname == wxid:
+            try:
+                from services.db import get_customer
+                cust = get_customer(wxid)
+                if cust:
+                    nickname = cust.get("nickname") or nickname
+                    if nickname and nickname != wxid:
+                        search_terms = [nickname]
+                        conv.nickname = nickname
+                        conv.search_terms = search_terms
+            except Exception:
+                pass
         try:
             outcome = await self._send_message(
                 wxid,
                 content,
-                nickname=conv.nickname,
+                nickname=nickname,
                 guard_manual_conflict=False,
-                search_terms=self._conv_mgr.get_search_terms(wxid),
+                search_terms=search_terms,
             )
             if outcome.status != "sent":
                 return {"status": "error", "error": outcome.detail or outcome.reason}

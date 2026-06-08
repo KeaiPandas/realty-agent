@@ -553,39 +553,6 @@ class TestAutoSend:
 
 
 class TestSenderHelpers:
-    def test_transport_falls_back_after_preferred_backend_failure(self):
-        from services.bot.sender import PywinautoTransport
-        from services.bot.wechat_backends import BackendError, ChatSessionBackend
-
-        class FailingBackend(ChatSessionBackend):
-            transport_mode = "desktop_rpa/wxauto"
-
-            def has_manual_conflict(self):
-                return False
-
-            def send_text(self, target, text: str):
-                raise BackendError("focus_failed", "wxauto failed")
-
-        class SuccessBackend(ChatSessionBackend):
-            transport_mode = "desktop_rpa/main_window"
-
-            def __init__(self):
-                self.sent = []
-
-            def has_manual_conflict(self):
-                return False
-
-            def send_text(self, target, text: str):
-                self.sent.append((target.wxid, text))
-
-        transport = PywinautoTransport(backend=FailingBackend())
-        fallback = SuccessBackend()
-        transport._fallback_backend = fallback
-        result = transport.send("filehelper", "hello", nickname="文件传输助手", guard_manual_conflict=False)
-
-        assert result.status == "sent"
-        assert fallback.sent == [("filehelper", "hello")]
-
     def test_split_message_preserves_content(self):
         from services.bot.wechat_backends import WindowsMainWindowBackend
 
@@ -627,35 +594,6 @@ class TestSenderHelpers:
         assert observed["range"] == (0.1, 0.5)
         assert observed["sleep"] == 0.25
 
-    def test_send_button_detection_uses_green_state(self, monkeypatch):
-        from PIL import Image
-
-        from services.bot.wechat_backends import WindowRef, WindowsMainWindowBackend
-
-        backend = WindowsMainWindowBackend()
-        window = WindowRef(
-            handle=1,
-            title="chat",
-            class_name="Qt51514QWindowIcon",
-            rect=(0, 0, 900, 700),
-        )
-
-        enabled = Image.new("RGB", (900, 700), (30, 30, 30))
-        for x in range(780, 880):
-            for y in range(630, 680):
-                enabled.putpixel((x, y), (35, 190, 110))
-
-        disabled = Image.new("RGB", (900, 700), (30, 30, 30))
-        for x in range(780, 880):
-            for y in range(630, 680):
-                disabled.putpixel((x, y), (60, 60, 60))
-
-        monkeypatch.setattr(backend, "_capture_window", lambda _: enabled)
-        assert backend._send_button_enabled(window) is True
-
-        monkeypatch.setattr(backend, "_capture_window", lambda _: disabled)
-        assert backend._send_button_enabled(window) is False
-
     def test_find_chat_window_prefers_exact_title(self, monkeypatch):
         from services.bot.wechat_backends import WindowRef, WindowsMainWindowBackend
 
@@ -671,9 +609,9 @@ class TestSenderHelpers:
         assert matched is not None
         assert matched.handle == 11
 
-        fallback = backend._find_chat_window(["Carol"], exclude_handles={10})
-        assert fallback is not None
-        assert fallback.handle == 11
+        # No window matches "Carol" → returns None
+        no_match = backend._find_chat_window(["Carol"], exclude_handles={10})
+        assert no_match is None
 
     def test_pick_main_window_prefers_signed_in_window_and_filters_login_popup(self):
         from services.bot.wechat_backends import WindowRef, WindowsMainWindowBackend

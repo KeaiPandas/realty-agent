@@ -15,8 +15,6 @@ from services.bot.wechat_backends import (
     ChatTarget,
     WindowRef,
     WindowsMainWindowBackend,
-    WxautoCompatibleBackend,
-    WxautoBackend,
     build_chat_backend,
 )
 
@@ -52,14 +50,12 @@ class SenderTransport:
 
 
 class PywinautoTransport(SenderTransport):
-    """Legacy transport name kept for compatibility with the rest of the app."""
+    """Transport that delegates to the configured WeChat backend."""
 
     def __init__(self, backend=None):
         self._backend = backend
-        self._fallback_backend = None
         self._rng = random.Random()
-        preferred = settings.BOT_TRANSPORT_BACKEND or "auto"
-        self.transport_mode = f"desktop_rpa/{preferred}"
+        self.transport_mode = "desktop_rpa/main_window"
 
     def send(
         self,
@@ -77,10 +73,12 @@ class PywinautoTransport(SenderTransport):
         if not target.search_terms:
             raise SenderFailure(FOCUS_FAILED, "Missing contact identifier")
 
+        backend = self._get_backend()
+
         if (
             guard_manual_conflict
             and settings.BOT_MANUAL_CONFLICT_GUARD
-            and self._get_backend().has_manual_conflict()
+            and backend.has_manual_conflict()
         ):
             return SendOutcome(
                 status="deferred",
@@ -89,47 +87,19 @@ class PywinautoTransport(SenderTransport):
             )
 
         self._sleep_between(settings.BOT_THINK_DELAY_MIN, settings.BOT_THINK_DELAY_MAX)
-        backend = self._get_backend()
+
         try:
-            self.transport_mode = getattr(backend, "transport_mode", self.transport_mode)
             backend.send_text(target, text)
             return SendOutcome(status="sent")
         except BackendError as exc:
-            fallback = self._get_fallback_backend(backend)
-            if fallback is not None:
-                try:
-                    self.transport_mode = getattr(fallback, "transport_mode", self.transport_mode)
-                    fallback.send_text(target, text)
-                    return SendOutcome(status="sent")
-                except BackendError as fallback_exc:
-                    raise SenderFailure(fallback_exc.reason, fallback_exc.detail) from fallback_exc
             raise SenderFailure(exc.reason, exc.detail) from exc
         except Exception as exc:
             raise SenderFailure(SEND_FAILED, str(exc)) from exc
 
-    def _get_backend(self):
-        if self._backend is not None:
-            return self._backend
-        preferred = settings.BOT_TRANSPORT_BACKEND or "auto"
-        try:
-            self._backend = build_chat_backend(preferred)
-        except Exception:
-            if str(preferred).lower() not in {"native", "main_window", "desktop_rpa"}:
-                self._backend = WindowsMainWindowBackend()
-            else:
-                raise
+    def _get_backend(self) -> WindowsMainWindowBackend:
+        if self._backend is None:
+            self._backend = build_chat_backend(settings.BOT_TRANSPORT_BACKEND)
         return self._backend
-
-    def _get_fallback_backend(self, current_backend):
-        if isinstance(current_backend, WindowsMainWindowBackend):
-            return None
-        if isinstance(current_backend, WxautoCompatibleBackend):
-            if self._fallback_backend is None:
-                self._fallback_backend = WindowsMainWindowBackend()
-            return self._fallback_backend
-        if self._fallback_backend is None:
-            self._fallback_backend = WxautoCompatibleBackend()
-        return self._fallback_backend
 
     @staticmethod
     def _build_search_terms(
@@ -142,6 +112,9 @@ class PywinautoTransport(SenderTransport):
         for term in [*(search_terms or []), nickname, wxid]:
             value = (term or "").strip()
             if not value:
+                continue
+            # 排除 wxid_ 开头的内部ID，微信搜索框用不了
+            if value.startswith("wxid_"):
                 continue
             key = value.casefold()
             if key in seen:
@@ -156,21 +129,3 @@ class PywinautoTransport(SenderTransport):
         floor = max(0.0, minimum)
         ceiling = max(floor, maximum)
         time.sleep(self._rng.uniform(floor, ceiling))
-
-
-__all__ = [
-    "BackendError",
-    "ChatTarget",
-    "FOCUS_FAILED",
-    "MANUAL_CONFLICT",
-    "PywinautoTransport",
-    "SEND_FAILED",
-    "SendOutcome",
-    "SenderFailure",
-    "SenderTransport",
-    "WindowRef",
-    "WindowsMainWindowBackend",
-    "WxautoCompatibleBackend",
-    "WxautoBackend",
-    "build_chat_backend",
-]

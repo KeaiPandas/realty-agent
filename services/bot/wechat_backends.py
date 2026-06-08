@@ -1,25 +1,19 @@
-"""Pluggable WeChat automation backends.
+"""WeChat desktop RPA backend.
 
-This module keeps the Bot's business flow independent from any single
-desktop automation implementation. The public contract is intentionally
-small and mirrors the mature `ChatWith` + `SendMsg` style used by
-existing WeChat automation projects.
+Drives the WeChat 4.x main window via Win32 APIs + pywinauto to
+navigate to a contact and send text messages.
 """
 
 from __future__ import annotations
 
 import ctypes
-import importlib
 import math
 import random
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from pathlib import Path
-import sys
 
 import psutil
-import win32api
 import win32clipboard
 import win32con
 import win32gui
@@ -28,10 +22,12 @@ import win32process
 from config import settings
 
 
+# ── Reason codes ──────────────────────────────────────────────
 MANUAL_CONFLICT = "manual_conflict"
 FOCUS_FAILED = "focus_failed"
 SEND_FAILED = "send_failed"
 
+# ── WeChat window constants ──────────────────────────────────
 MAIN_WINDOW_TITLE = "微信"
 WINDOW_CLASS_CANDIDATES = {"Qt51514QWindowIcon", "WeChatMainWndForPC"}
 WINDOW_TITLE_EXCLUDE = {"", "Weixin", MAIN_WINDOW_TITLE}
@@ -75,6 +71,8 @@ class BackendError(RuntimeError):
 
 
 class ChatSessionBackend(ABC):
+    """Abstract base for WeChat transport backends."""
+
     transport_mode = "desktop_rpa"
 
     def has_manual_conflict(self) -> bool:
@@ -85,195 +83,21 @@ class ChatSessionBackend(ABC):
         raise NotImplementedError
 
 
-class WxautoBackend(ChatSessionBackend):
-    """Optional adapter for wxauto-style desktop automation."""
-
-    transport_mode = "desktop_rpa/wxauto"
-
-    def __init__(self):
-        self._module_name, self._module, self._client = self._build_client()
-
-    def send_text(self, target: ChatTarget, text: str):
-        if self._module_name == "wxauto":
-            self._send_text_legacy(target, text)
-            return
-        last_error = None
-        for term in target.search_terms or [target.nickname, target.wxid]:
-            if not term:
-                continue
-            try:
-                self._client.ChatWith(term)
-                try:
-                    self._client.SendMsg(text)
-                except TypeError:
-                    self._client.SendMsg(text, who=term)
-                return
-            except Exception as exc:
-                last_error = exc
-                continue
-        raise BackendError(FOCUS_FAILED, f"wxauto failed to open chat: {last_error or 'no target matched'}")
-
-    def _send_text_legacy(self, target: ChatTarget, text: str):
-        set_clipboard_text = getattr(self._module, "SetClipboardText", None)
-        if set_clipboard_text is None:
-            raise BackendError(SEND_FAILED, "wxauto missing SetClipboardText helper")
-
-        last_error = None
-        for term in target.search_terms or [target.nickname, target.wxid]:
-            if not term:
-                continue
-            try:
-                self._client.ChatWith(term)
-                time.sleep(0.3)
-                self._activate_client_foreground()
-                editbox = self._client.ChatBox.EditControl()
-                editbox.Click()
-                time.sleep(0.2)
-                set_clipboard_text(text)
-                time.sleep(0.1)
-                editbox.SendKeys("{Ctrl}v")
-                time.sleep(0.1)
-                if not self._legacy_editor_has_text(editbox):
-                    editbox.Click()
-                    time.sleep(0.15)
-                    editbox.SendKeys("{Ctrl}v")
-                    time.sleep(0.15)
-                if not self._legacy_editor_has_text(editbox):
-                    raise BackendError(SEND_FAILED, "wxauto editbox did not accept pasted text")
-                editbox.SendKeys("{Enter}")
-                return
-            except Exception as exc:
-                last_error = exc
-                continue
-        if isinstance(last_error, BackendError):
-            raise last_error
-        raise BackendError(FOCUS_FAILED, f"wxauto failed to open chat: {last_error or 'no target matched'}")
-
-    @staticmethod
-    def _legacy_editor_has_text(editbox) -> bool:
-        try:
-            value = editbox.GetValuePattern().Value
-            return bool((value or "").strip())
-        except Exception:
-            return False
-
-    def _activate_client_foreground(self):
-        hwnd = getattr(self._client, "HWND", None)
-        if not hwnd:
-            raise BackendError(FOCUS_FAILED, "wxauto client has no main window handle")
-        try:
-            if win32gui.IsIconic(hwnd):
-                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-            win32gui.SetWindowPos(
-                hwnd,
-                win32con.HWND_TOPMOST,
-                0,
-                0,
-                0,
-                0,
-                win32con.SWP_SHOWWINDOW | win32con.SWP_NOSIZE | win32con.SWP_NOMOVE,
-            )
-            win32gui.SetWindowPos(
-                hwnd,
-                win32con.HWND_NOTOPMOST,
-                0,
-                0,
-                0,
-                0,
-                win32con.SWP_SHOWWINDOW | win32con.SWP_NOSIZE | win32con.SWP_NOMOVE,
-            )
-            wechat_tid = win32process.GetWindowThreadProcessId(hwnd)[0]
-            current_tid = win32api.GetCurrentThreadId()
-            attached = False
-            try:
-                attached = bool(win32process.AttachThreadInput(current_tid, wechat_tid, True))
-            except Exception:
-                attached = False
-            try:
-                win32gui.SetForegroundWindow(hwnd)
-                win32gui.SetFocus(hwnd)
-            finally:
-                if attached:
-                    try:
-                        win32process.AttachThreadInput(current_tid, wechat_tid, False)
-                    except Exception:
-                        pass
-        except Exception as exc:
-            raise BackendError(FOCUS_FAILED, f"wxauto failed to activate WeChat: {exc}") from exc
-
-    @staticmethod
-    def _build_client():
-        candidate_paths = [
-            Path(__file__).resolve().parents[2] / "_vendor" / "wxauto4_src",
-        ]
-        for candidate_path in candidate_paths:
-            if candidate_path.exists():
-                path_str = str(candidate_path)
-                if path_str not in sys.path:
-                    sys.path.insert(0, path_str)
-
-        if settings.WECHAT_VERSION == "3.x":
-            candidates = ("wxauto", "wxauto4")
-        else:
-            candidates = ("wxauto4", "wxauto")
-        errors: list[str] = []
-        for module_name in candidates:
-            try:
-                module = importlib.import_module(module_name)
-                client_cls = getattr(module, "WeChat", None)
-                if client_cls is None:
-                    errors.append(f"{module_name}: missing WeChat client")
-                    continue
-                if module_name == "wxauto":
-                    return module_name, module, client_cls()
-                hwnd = WxautoBackend._detect_main_hwnd()
-                if hwnd:
-                    return module_name, module, client_cls(hwnd=hwnd)
-                return module_name, module, client_cls()
-            except Exception as exc:
-                errors.append(f"{module_name}: {exc}")
-        raise RuntimeError(
-            "wxauto backend unavailable: " + (" | ".join(errors) if errors else "missing WeChat client")
-        )
-
-    @staticmethod
-    def _detect_main_hwnd() -> int | None:
-        def is_main_window(window: tuple[int, str, str]) -> bool:
-            hwnd, title, class_name = window
-            return title == MAIN_WINDOW_TITLE and class_name in WINDOW_CLASS_CANDIDATES
-
-        windows = []
-
-        def callback(hwnd, _):
-            if not win32gui.IsWindowVisible(hwnd):
-                return
-            title = win32gui.GetWindowText(hwnd)
-            class_name = win32gui.GetClassName(hwnd)
-            if class_name not in WINDOW_CLASS_CANDIDATES:
-                return
-            try:
-                _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                if psutil.Process(pid).name().lower() != "weixin.exe":
-                    return
-            except Exception:
-                return
-            windows.append((hwnd, title, class_name))
-
-        win32gui.EnumWindows(callback, None)
-        for hwnd, title, class_name in windows:
-            if is_main_window((hwnd, title, class_name)):
-                return hwnd
-        return windows[0][0] if windows else None
-
-
 class WindowsMainWindowBackend(ChatSessionBackend):
-    """Native RPA backend that drives the WeChat main window directly."""
+    """Native RPA backend that drives the WeChat main window directly.
+
+    Workflow: focus WeChat → search contact → type message → Enter.
+    WeChat 4.x compatible: uses Enter to select search results and
+    recovers the window if WeChat hides it during search navigation.
+    """
 
     transport_mode = "desktop_rpa/main_window"
 
     def __init__(self):
         self._last_bot_focus_at = 0.0
         self._rng = random.Random()
+
+    # ── public interface ──────────────────────────────────────
 
     def has_manual_conflict(self) -> bool:
         foreground = win32gui.GetForegroundWindow()
@@ -309,9 +133,9 @@ class WindowsMainWindowBackend(ChatSessionBackend):
             for send_attempt in range(send_retries):
                 try:
                     self._fill_editor(chat_window, mouse, keyboard, text)
-                    self._confirm_editor_not_empty(chat_window)
                     keyboard.send_keys("{ENTER}")
-                    self._confirm_send_complete(chat_window)
+                    # Brief wait for the message to be dispatched
+                    self._sleep_between(0.3, 0.5)
                     return
                 except BackendError as exc:
                     last_reason = exc.reason
@@ -322,6 +146,8 @@ class WindowsMainWindowBackend(ChatSessionBackend):
                     chat_window = self._refresh_window(chat_window.handle)
 
         raise BackendError(last_reason, last_error)
+
+    # ── chat navigation ───────────────────────────────────────
 
     def _chat_with(
         self,
@@ -340,6 +166,7 @@ class WindowsMainWindowBackend(ChatSessionBackend):
         if self._select_conversation_via_search(main_window, mouse, keyboard, target):
             return self._refresh_window(main_window.handle)
 
+        # Fallback: open most recent conversation from the chat list
         known_handles = {window.handle for window in self._list_wechat_windows()}
         self._open_recent_conversation(main_window, mouse)
         active_popup = self._foreground_chat_window(main_window.handle)
@@ -351,6 +178,79 @@ class WindowsMainWindowBackend(ChatSessionBackend):
             self._focus_window(popup)
             return popup
         return self._refresh_window(main_window.handle)
+
+    def _select_conversation_via_search(
+        self,
+        main_window: WindowRef,
+        mouse,
+        keyboard,
+        target: ChatTarget,
+    ) -> bool:
+        """Navigate to a contact via search.
+
+        Clicks the search box, pastes the term, presses Enter to select
+        the first result.  No ESC press (which can hide the WeChat 4.x
+        window).  Recovers the window if WeChat hides it.
+        """
+        for term in target.search_terms:
+            if not term:
+                continue
+
+            self._focus_window(main_window)
+
+            # 1. Click search box to activate it
+            mouse.click(coords=self._search_box_point(main_window.rect))
+            self._sleep_between(0.15, 0.25)
+
+            # 2. Clear existing text and paste search term
+            keyboard.send_keys("^a{BACKSPACE}")
+            self._sleep_between(0.1, 0.2)
+            self._paste_text(term)
+            keyboard.send_keys("^v")
+            self._sleep_between(0.5, 0.8)
+
+            # 3. Enter selects the first search result
+            keyboard.send_keys("{ENTER}")
+            self._last_bot_focus_at = time.monotonic()
+            self._sleep_between(0.3, 0.5)
+
+            # 4. Recover window if WeChat 4.x hid it
+            hwnd = main_window.handle
+            if not win32gui.IsWindowVisible(hwnd):
+                ctypes.windll.user32.ShowWindow(hwnd, win32con.SW_SHOW)
+                time.sleep(0.2)
+
+            return True
+        return False
+
+    def _open_recent_conversation(self, main_window: WindowRef, mouse):
+        mouse.click(coords=self._recent_item_point(main_window.rect))
+        self._last_bot_focus_at = time.monotonic()
+        self._sleep_between(0.35, 0.6)
+
+    # ── editor ────────────────────────────────────────────────
+
+    def _fill_editor(self, chat_window: WindowRef, mouse, keyboard, text: str):
+        if not self._is_window(chat_window.handle):
+            raise BackendError(FOCUS_FAILED, "Chat window is no longer available")
+
+        self._focus_window(chat_window)
+        mouse.click(coords=self._chat_input_point(chat_window.rect))
+        self._sleep_between(0.15, 0.3)
+        keyboard.send_keys("^a{BACKSPACE}")
+        self._sleep_between(0.1, 0.2)
+
+        segments = self._split_message(text)
+        for index, segment in enumerate(segments):
+            self._paste_text(segment)
+            keyboard.send_keys("^v")
+            if index < len(segments) - 1:
+                self._sleep_between(
+                    settings.BOT_SEGMENT_DELAY_MIN,
+                    settings.BOT_SEGMENT_DELAY_MAX,
+                )
+
+    # ── window management ─────────────────────────────────────
 
     def _get_main_window(self) -> WindowRef:
         windows = self._list_wechat_windows()
@@ -407,6 +307,10 @@ class WindowsMainWindowBackend(ChatSessionBackend):
             if foreground_tid and target_tid and foreground_tid != target_tid:
                 attached = bool(user32.AttachThreadInput(foreground_tid, target_tid, True))
 
+            # WeChat 4.x may hide (not minimize) the window after search
+            # navigation — SW_SHOW is needed before SW_RESTORE.
+            if not win32gui.IsWindowVisible(hwnd):
+                user32.ShowWindow(hwnd, win32con.SW_SHOW)
             user32.ShowWindow(hwnd, win32con.SW_RESTORE)
             user32.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
             user32.SetWindowPos(
@@ -445,105 +349,6 @@ class WindowsMainWindowBackend(ChatSessionBackend):
                 continue
         self._focus_window(self._refresh_window(main_handle))
 
-    def _select_conversation_via_search(
-        self,
-        main_window: WindowRef,
-        mouse,
-        keyboard,
-        target: ChatTarget,
-    ) -> bool:
-        for term in target.search_terms:
-            self._focus_window(main_window)
-            mouse.click(coords=self._search_box_point(main_window.rect))
-            self._sleep_between(0.1, 0.2)
-            keyboard.send_keys("^a{BACKSPACE}")
-            self._sleep_between(0.1, 0.2)
-            self._paste_text(term)
-            keyboard.send_keys("^v")
-            self._sleep_between(0.35, 0.55)
-            mouse.click(coords=self._search_result_point(main_window.rect))
-            self._last_bot_focus_at = time.monotonic()
-            self._sleep_between(0.35, 0.55)
-            keyboard.send_keys("{ESC}")
-            self._sleep_between(0.1, 0.2)
-            return True
-        return False
-
-    def _open_recent_conversation(self, main_window: WindowRef, mouse):
-        mouse.click(coords=self._recent_item_point(main_window.rect))
-        self._last_bot_focus_at = time.monotonic()
-        self._sleep_between(0.35, 0.6)
-
-    def _fill_editor(self, chat_window: WindowRef, mouse, keyboard, text: str):
-        if not self._is_window(chat_window.handle):
-            raise BackendError(FOCUS_FAILED, "Chat window is no longer available")
-
-        self._focus_window(chat_window)
-        mouse.click(coords=self._chat_input_point(chat_window.rect))
-        self._sleep_between(0.15, 0.3)
-        keyboard.send_keys("^a{BACKSPACE}")
-        self._sleep_between(0.1, 0.2)
-
-        segments = self._split_message(text)
-        for index, segment in enumerate(segments):
-            self._paste_text(segment)
-            keyboard.send_keys("^v")
-            if index < len(segments) - 1:
-                self._sleep_between(
-                    settings.BOT_SEGMENT_DELAY_MIN,
-                    settings.BOT_SEGMENT_DELAY_MAX,
-                )
-
-    def _confirm_editor_not_empty(self, chat_window: WindowRef):
-        if not self._wait_for_send_button_state(chat_window, expected_enabled=True, timeout=2.0):
-            raise BackendError(SEND_FAILED, "Message editor remained empty after input")
-
-    def _confirm_send_complete(self, chat_window: WindowRef):
-        if not self._wait_for_send_button_state(chat_window, expected_enabled=False, timeout=3.0):
-            raise BackendError(SEND_FAILED, "Message editor was not cleared after send")
-
-    def _wait_for_send_button_state(
-        self,
-        chat_window: WindowRef,
-        expected_enabled: bool,
-        timeout: float,
-    ) -> bool:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._send_button_enabled(chat_window) == expected_enabled:
-                return True
-            time.sleep(0.15)
-        return self._send_button_enabled(chat_window) == expected_enabled
-
-    def _send_button_enabled(self, chat_window: WindowRef) -> bool:
-        image = self._capture_window(chat_window)
-        width, height = image.size
-        sample = image.crop(
-            (
-                max(0, width - 120),
-                max(0, height - 70),
-                max(1, width - 20),
-                max(1, height - 20),
-            )
-        )
-        if sample.width == 0 or sample.height == 0:
-            return False
-        pixels = sample.load()
-        greenish = 0
-        total = sample.width * sample.height
-        for x in range(sample.width):
-            for y in range(sample.height):
-                red, green, blue = pixels[x, y][:3]
-                if green > 120 and green > red + 25 and green > blue + 10:
-                    greenish += 1
-        return greenish >= max(40, total // 25)
-
-    def _capture_window(self, chat_window: WindowRef):
-        from PIL import ImageGrab
-
-        left, top, right, bottom = chat_window.rect
-        return ImageGrab.grab(bbox=(left, top, right, bottom))
-
     def _refresh_window(self, handle: int) -> WindowRef:
         if not self._is_window(handle):
             raise BackendError(FOCUS_FAILED, "Chat window is no longer available")
@@ -555,51 +360,7 @@ class WindowsMainWindowBackend(ChatSessionBackend):
             visible=bool(win32gui.IsWindowVisible(handle)),
         )
 
-    def _wait_for_chat_window(
-        self,
-        search_terms: list[str],
-        known_handles: set[int],
-        timeout: float = 3.0,
-    ) -> WindowRef | None:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            active_popup = self._foreground_chat_window()
-            if active_popup and active_popup.handle not in known_handles:
-                return active_popup
-            popup = self._find_chat_window(search_terms, known_handles)
-            if popup:
-                return popup
-            time.sleep(0.15)
-        return self._find_chat_window(search_terms, known_handles)
-
-    def _find_chat_window(
-        self,
-        search_terms: list[str],
-        exclude_handles: set[int] | None = None,
-        exact_only: bool = False,
-    ) -> WindowRef | None:
-        windows = self._list_wechat_windows()
-        normalized_terms = {term.casefold() for term in search_terms if term}
-        new_windows: list[WindowRef] = []
-        fallback: list[WindowRef] = []
-
-        for window in windows:
-            if window.title in WINDOW_TITLE_EXCLUDE:
-                continue
-            if exclude_handles and window.handle in exclude_handles:
-                continue
-            fallback.append(window)
-            if window.title.casefold() in normalized_terms:
-                return window
-            new_windows.append(window)
-
-        if exact_only:
-            return None
-        if new_windows:
-            return new_windows[0]
-        if fallback:
-            return fallback[0]
-        return None
+    # ── window enumeration ────────────────────────────────────
 
     def _list_wechat_windows(self) -> list[WindowRef]:
         windows: list[WindowRef] = []
@@ -633,13 +394,6 @@ class WindowsMainWindowBackend(ChatSessionBackend):
         except Exception:
             return False
 
-    @staticmethod
-    def _is_window(hwnd: int) -> bool:
-        try:
-            return bool(hwnd) and win32gui.IsWindow(hwnd)
-        except Exception:
-            return False
-
     def _foreground_chat_window(self, main_handle: int | None = None) -> WindowRef | None:
         hwnd = win32gui.GetForegroundWindow()
         if not self._is_wechat_handle(hwnd):
@@ -651,20 +405,40 @@ class WindowsMainWindowBackend(ChatSessionBackend):
             return None
         return self._refresh_window(hwnd)
 
-    @staticmethod
-    def _is_foreground_window(hwnd: int) -> bool:
-        try:
-            return bool(hwnd) and win32gui.GetForegroundWindow() == hwnd
-        except Exception:
-            return False
+    def _find_chat_window(
+        self,
+        search_terms: list[str],
+        exclude_handles: set[int] | None = None,
+        exact_only: bool = False,
+    ) -> WindowRef | None:
+        normalized_terms = {term.casefold() for term in search_terms if term}
+        for window in self._list_wechat_windows():
+            if window.title in WINDOW_TITLE_EXCLUDE:
+                continue
+            if exclude_handles and window.handle in exclude_handles:
+                continue
+            if window.title.casefold() in normalized_terms:
+                return window
+        return None
 
-    @staticmethod
-    def _is_usable_window(window: WindowRef) -> bool:
-        return window.width >= MIN_WINDOW_WIDTH and window.height >= MIN_WINDOW_HEIGHT
-
-    @staticmethod
-    def _window_sort_key(window: WindowRef) -> tuple[int, int, int, int]:
-        return (window.title != MAIN_WINDOW_TITLE, not window.visible, -window.area, window.handle)
+    def _wait_for_chat_window(
+        self,
+        search_terms: list[str],
+        known_handles: set[int],
+        timeout: float = 3.0,
+    ) -> WindowRef | None:
+        deadline = time.monotonic() + timeout
+        normalized_terms = {t.casefold() for t in search_terms if t}
+        while time.monotonic() < deadline:
+            active_popup = self._foreground_chat_window()
+            if active_popup and active_popup.handle not in known_handles:
+                if active_popup.title.casefold() in normalized_terms:
+                    return active_popup
+            popup = self._find_chat_window(search_terms, known_handles)
+            if popup:
+                return popup
+            time.sleep(0.15)
+        return self._find_chat_window(search_terms, known_handles)
 
     def _pick_main_window(self, windows: list[WindowRef]) -> WindowRef | None:
         if not windows:
@@ -672,24 +446,7 @@ class WindowsMainWindowBackend(ChatSessionBackend):
         ranked = sorted(windows, key=self._window_sort_key)
         return ranked[0]
 
-    def _window_rect(self, hwnd: int) -> tuple[int, int, int, int]:
-        try:
-            from pywinauto import Desktop
-
-            rect = Desktop(backend="win32").window(handle=hwnd).rectangle()
-            return (rect.left, rect.top, rect.right, rect.bottom)
-        except Exception:
-            return win32gui.GetWindowRect(hwnd)
-
-    @staticmethod
-    def _recent_item_point(rect: tuple[int, int, int, int]) -> tuple[int, int]:
-        left, top, right, bottom = rect
-        width = right - left
-        height = bottom - top
-        return (
-            left + max(155, int(width * 0.14)),
-            top + max(125, int(height * 0.12)),
-        )
+    # ── coordinate helpers ────────────────────────────────────
 
     @staticmethod
     def _search_box_point(rect: tuple[int, int, int, int]) -> tuple[int, int]:
@@ -699,16 +456,6 @@ class WindowsMainWindowBackend(ChatSessionBackend):
         return (
             left + max(145, int(width * 0.12)),
             top + max(52, int(height * 0.04)),
-        )
-
-    @staticmethod
-    def _search_result_point(rect: tuple[int, int, int, int]) -> tuple[int, int]:
-        left, top, right, bottom = rect
-        width = right - left
-        height = bottom - top
-        return (
-            left + max(130, int(width * 0.12)),
-            top + max(145, int(height * 0.14)),
         )
 
     @staticmethod
@@ -722,13 +469,16 @@ class WindowsMainWindowBackend(ChatSessionBackend):
         )
 
     @staticmethod
-    def _send_button_point(rect: tuple[int, int, int, int]) -> tuple[int, int]:
+    def _recent_item_point(rect: tuple[int, int, int, int]) -> tuple[int, int]:
         left, top, right, bottom = rect
         width = right - left
+        height = bottom - top
         return (
-            right - max(92, int(width * 0.07)),
-            bottom - 34,
+            left + max(155, int(width * 0.14)),
+            top + max(125, int(height * 0.12)),
         )
+
+    # ── utilities ─────────────────────────────────────────────
 
     def _split_message(self, text: str) -> list[str]:
         text = text.strip()
@@ -772,6 +522,37 @@ class WindowsMainWindowBackend(ChatSessionBackend):
         finally:
             win32clipboard.CloseClipboard()
 
+    @staticmethod
+    def _is_window(hwnd: int) -> bool:
+        try:
+            return bool(hwnd) and win32gui.IsWindow(hwnd)
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_foreground_window(hwnd: int) -> bool:
+        try:
+            return bool(hwnd) and win32gui.GetForegroundWindow() == hwnd
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_usable_window(window: WindowRef) -> bool:
+        return window.width >= MIN_WINDOW_WIDTH and window.height >= MIN_WINDOW_HEIGHT
+
+    @staticmethod
+    def _window_sort_key(window: WindowRef) -> tuple[int, int, int, int]:
+        return (window.title != MAIN_WINDOW_TITLE, not window.visible, -window.area, window.handle)
+
+    def _window_rect(self, hwnd: int) -> tuple[int, int, int, int]:
+        try:
+            from pywinauto import Desktop
+
+            rect = Desktop(backend="win32").window(handle=hwnd).rectangle()
+            return (rect.left, rect.top, rect.right, rect.bottom)
+        except Exception:
+            return win32gui.GetWindowRect(hwnd)
+
     def _sleep_between(self, minimum: float, maximum: float):
         if maximum <= 0:
             return
@@ -780,106 +561,16 @@ class WindowsMainWindowBackend(ChatSessionBackend):
         time.sleep(self._rng.uniform(floor, ceiling))
 
 
-class WxautoCompatibleBackend(WindowsMainWindowBackend):
-    """Project-local backend inspired by wxauto's ChatWith + SendMsg flow."""
-
-    transport_mode = "desktop_rpa/wxauto_compat"
-
-    def send_text(self, target: ChatTarget, text: str):
-        from pywinauto import mouse
-        import pywinauto.keyboard as keyboard
-
-        if not target.search_terms:
-            raise BackendError(FOCUS_FAILED, "Missing contact identifier")
-
-        main_window = self._get_main_window()
-        chat_window = self.ChatWith(target, mouse=mouse, keyboard=keyboard, main_window=main_window)
-        self.SendMsg(text, mouse=mouse, keyboard=keyboard, chat_window=chat_window)
-
-    def ChatWith(
-        self,
-        target: ChatTarget,
-        mouse,
-        keyboard,
-        main_window: WindowRef | None = None,
-    ) -> WindowRef:
-        main_window = main_window or self._get_main_window()
-        return self._chat_with(main_window, mouse, keyboard, target)
-
-    def SendMsg(
-        self,
-        text: str,
-        mouse,
-        keyboard,
-        chat_window: WindowRef,
-    ):
-        if not self._is_window(chat_window.handle):
-            raise BackendError(FOCUS_FAILED, "Chat window is no longer available")
-
-        self._focus_window(chat_window)
-        self._fill_editor_like_wxauto(chat_window, mouse, keyboard, text)
-        self._confirm_editor_not_empty(chat_window)
-        mouse.click(coords=self._send_button_point(chat_window.rect))
-        self._sleep_between(0.15, 0.25)
-        self._confirm_send_complete(chat_window)
-
-    def _fill_editor_like_wxauto(self, chat_window: WindowRef, mouse, keyboard, text: str):
-        self._focus_chat_input(chat_window, mouse)
-
-        segments = self._split_message(text)
-        for index, segment in enumerate(segments):
-            self._ensure_chat_foreground(chat_window, mouse)
-            self._paste_text(segment)
-            keyboard.send_keys("^v")
-            self._sleep_between(0.05, 0.12)
-            if index < len(segments) - 1:
-                self._sleep_between(
-                    settings.BOT_SEGMENT_DELAY_MIN,
-                    settings.BOT_SEGMENT_DELAY_MAX,
-                )
-
-        # wxauto retries clipboard paste aggressively when the editor stays empty.
-        if not self._wait_for_send_button_state(chat_window, expected_enabled=True, timeout=0.6):
-            self._ensure_chat_foreground(chat_window, mouse)
-            self._paste_text(text)
-            keyboard.send_keys("+{INSERT}")
-            self._sleep_between(0.12, 0.2)
-
-        if not self._wait_for_send_button_state(chat_window, expected_enabled=True, timeout=0.6):
-            self._focus_chat_input(chat_window, mouse, double=True)
-            self._paste_text(text)
-            keyboard.send_keys("^v")
-
-    def _ensure_chat_foreground(self, chat_window: WindowRef, mouse):
-        if self._is_foreground_window(chat_window.handle):
-            return
-        refreshed = self._refresh_window(chat_window.handle)
-        self._focus_window(refreshed)
-        self._focus_chat_input(refreshed, mouse)
-
-    def _focus_chat_input(self, chat_window: WindowRef, mouse, double: bool = False):
-        point = self._chat_input_point(chat_window.rect)
-        if double:
-            mouse.double_click(coords=point)
-        else:
-            mouse.click(coords=point)
-        self._sleep_between(0.15, 0.25)
-
-
 def build_chat_backend(preferred: str | None = None) -> ChatSessionBackend:
-    selected = (preferred or settings.BOT_TRANSPORT_BACKEND or "auto").strip().lower()
-    if selected in {"wxauto", "wxauto4"}:
-        return WxautoBackend()
-    if selected in {"wxauto_compat", "compat"}:
-        return WxautoCompatibleBackend()
-    if selected in {"native", "main_window", "desktop_rpa"}:
+    """Factory: build a backend based on config or explicit preference.
+
+    Legacy values "wxauto", "wxauto4", "wxauto_compat", "compat", and "auto"
+    are all mapped to the native backend (the only one that supports WeChat 4.x).
+    """
+    selected = (preferred or settings.BOT_TRANSPORT_BACKEND or "native").strip().lower()
+    if selected in {
+        "native", "main_window", "desktop_rpa", "auto",
+        "wxauto", "wxauto4", "wxauto_compat", "compat",
+    }:
         return WindowsMainWindowBackend()
-    if selected == "auto":
-        try:
-            return WxautoBackend()
-        except Exception:
-            try:
-                return WxautoCompatibleBackend()
-            except Exception:
-                return WindowsMainWindowBackend()
     raise RuntimeError(f"Unsupported bot transport backend: {selected}")

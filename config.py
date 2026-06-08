@@ -133,7 +133,7 @@ class Settings:
         self.BOT_FOCUS_RETRY_COUNT = int(bot.get("focus_retry_count", 2))
         self.BOT_SEND_RETRY_COUNT = int(bot.get("send_retry_count", 1))
         self.BOT_MANUAL_CONFLICT_GUARD = bool(bot.get("manual_conflict_guard", True))
-        self.BOT_TRANSPORT_BACKEND = str(bot.get("transport_backend", "wxauto_compat"))
+        self.BOT_TRANSPORT_BACKEND = str(bot.get("transport_backend", "native"))
 
 
 settings = Settings()
