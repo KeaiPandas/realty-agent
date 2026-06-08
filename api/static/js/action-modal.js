@@ -120,7 +120,7 @@ export async function regenerateDraft() {
     const actionCard = document.querySelector(`.action-card[data-id]`);
     // Since we don't have the actionId stored, we use the current draft as context
     // Simply call the LLM again with variation by appending a regeneration hint
-    const resp = await fetch('/api/leads/actions/' + currentAction._actionId + '/generate-reply', {
+    const resp = await fetch('/api/leads/actions/' + currentAction._actionId + '/generate-reply?force=true', {
       method: 'POST',
     });
     if (resp.ok) {

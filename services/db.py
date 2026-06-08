@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS actions (
     due_date TEXT,
     source TEXT,
     ai_suggestion TEXT,
+    reply_draft TEXT,
     created_at REAL,
     completed_at REAL
 );
@@ -84,7 +85,17 @@ def init_db():
     """初始化数据库表结构"""
     conn = get_conn()
     conn.executescript(_SCHEMA)
+    # 增量迁移：为旧表添加新列
+    _migrate(conn)
     conn.close()
+
+
+def _migrate(conn):
+    """检查并添加缺失的列（兼容已有数据库）"""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(actions)").fetchall()}
+    if "reply_draft" not in existing:
+        conn.execute("ALTER TABLE actions ADD COLUMN reply_draft TEXT")
+        conn.commit()
 
 
 # ── 客户 CRUD ──

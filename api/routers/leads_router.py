@@ -110,10 +110,10 @@ def list_groups():
 
 
 @router.post("/actions/{action_id}/generate-reply")
-def generate_reply(action_id: int):
-    """AI 生成行动项对应的回复话术"""
+def generate_reply(action_id: int, force: bool = False):
+    """AI 生成行动项对应的回复话术（已生成则返回缓存，force=True 强制重新生成）"""
     from services.leads.reply_generator import generate_reply as _gen
-    result = _gen(action_id)
+    result = _gen(action_id, force=force)
     if "error" in result:
         from fastapi import HTTPException
         raise HTTPException(404, result["error"])

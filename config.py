@@ -67,6 +67,11 @@ class Settings:
         self.LLM_TEMPERATURE = float(llm.get("temperature", 0))
         self.LLM_MAX_TOKENS = int(llm.get("max_tokens", 4096))
 
+        # ── 话术生成 LLM（独立配置，不填则回退到主 LLM） ──
+        self.REPLY_LLM_API_KEY = _env("REPLY_LLM_API_KEY", "") or self.LLM_API_KEY
+        self.REPLY_LLM_BASE_URL = _env("REPLY_LLM_BASE_URL", "") or self.LLM_BASE_URL
+        self.REPLY_LLM_MODEL = _env("REPLY_LLM_MODEL", "") or self.LLM_MODEL
+
         # ── 微信 ──
         self.WECHAT_DATA_DIR = _env(
             "WECHAT_DATA_DIR", wechat.get("data_dir") or ""

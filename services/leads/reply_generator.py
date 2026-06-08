@@ -4,8 +4,12 @@ import json
 from config import settings
 
 
-def generate_reply(action_id: int) -> dict:
-    """根据 action 生成 AI 回复话术
+def generate_reply(action_id: int, force: bool = False) -> dict:
+    """根据 action 生成 AI 回复话术。已生成的直接返回缓存。
+
+    Args:
+        action_id: 行动项 ID
+        force: 是否强制重新生成（忽略缓存）
 
     Returns: { wxid, nickname, desc, draft }
     """
@@ -18,15 +22,26 @@ def generate_reply(action_id: int) -> dict:
         "WHERE a.id = ?",
         (action_id,),
     ).fetchone()
-    conn.close()
 
     if not row:
+        conn.close()
         return {"error": "action 不存在"}
 
     action = dict(row)
     wxid = action["wxid"]
     nickname = action.get("nickname") or wxid
     desc = action.get("description") or ""
+
+    # 如果已有缓存且不强制刷新，直接返回
+    cached_draft = action.get("reply_draft")
+    if cached_draft and not force:
+        conn.close()
+        return {
+            "wxid": wxid,
+            "nickname": nickname,
+            "desc": desc,
+            "draft": cached_draft,
+        }
 
     # 解析客户画像
     profile = {}
@@ -48,6 +63,14 @@ def generate_reply(action_id: int) -> dict:
 
     # 调用 LLM 生成话术
     draft = _call_llm(nickname, profile, chat_history, last_customer_msg, desc)
+
+    # 持久化到 DB
+    conn.execute(
+        "UPDATE actions SET reply_draft = ? WHERE id = ?",
+        (draft, action_id),
+    )
+    conn.commit()
+    conn.close()
 
     return {
         "wxid": wxid,
@@ -109,9 +132,9 @@ def _call_llm(nickname: str, profile: dict, chat_history: str,
         )
 
         llm = ChatOpenAI(
-            model=settings.LLM_MODEL,
-            openai_api_key=settings.LLM_API_KEY,
-            openai_api_base=settings.LLM_BASE_URL,
+            model=settings.REPLY_LLM_MODEL,
+            api_key=settings.REPLY_LLM_API_KEY,
+            base_url=settings.REPLY_LLM_BASE_URL,
             temperature=0.7,
             max_tokens=200,
         )

@@ -54,7 +54,11 @@ def persist_messages(wxid: str, messages: list[dict], contact_profile: dict | No
             continue  # 跳过已存在的消息
 
         content = msg.get("content", "")
-        is_from_customer = int(msg.get("is_from_customer", msg.get("isSend", 1) == 0))
+        is_send = msg.get("isSend", None)
+        if is_send is not None:
+            is_from_customer = int(is_send == 0)
+        else:
+            is_from_customer = int(msg.get("is_from_customer", 1))
 
         conn.execute(
             "INSERT INTO messages (wxid, content, is_from_customer, timestamp, created_at) "
@@ -91,10 +95,20 @@ def persist_profile(wxid: str, profile) -> None:
     profile_dict = profile.model_dump(exclude_none=True)
     kwargs = {"profile_json": json.dumps(profile_dict, ensure_ascii=False)}
 
-    # 从画像中提取 stage
+    # 从画像中提取 stage（映射中文值到英文枚举）
     stage = getattr(profile, "followup_stage", None)
     if stage:
-        kwargs["stage"] = stage
+        stage_map = {
+            "初步咨询": "initial",
+            "初步接触": "initial",
+            "意向筛选": "intent",
+            "高意向": "intent",
+            "带看洽谈": "showing",
+            "带看": "showing",
+            "成交": "closed",
+            "流失待定": "initial",
+        }
+        kwargs["stage"] = stage_map.get(stage, stage if stage in ("initial", "intent", "showing", "closed") else "initial")
 
     # 从画像中提取强信号字段
     phone = getattr(profile, "phone", None)

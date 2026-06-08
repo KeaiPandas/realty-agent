@@ -178,7 +178,7 @@ async function submitImmediateSync() {
         contact_id: '__all__',
         date_start: dateStart || null,
         date_end: dateEnd || null,
-        parse_only: false,
+        parse_only: true,
       }),
     });
 
@@ -246,3 +246,23 @@ window._openSyncModal = openSyncModal;
 window._closeSyncModal = closeSyncModal;
 window._updateSyncRadioUI = updateSyncRadioUI;
 window._submitSync = submitSync;
+window._syncToFeishu = syncToFeishu;
+
+async function syncToFeishu() {
+  const btn = document.getElementById('feishuSyncBtn');
+  btn.disabled = true;
+  btn.textContent = '📤 同步中...';
+  try {
+    const resp = await fetch('/api/workflow/sync-feishu', { method: 'POST' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    showToast(`飞书同步完成: ${data.synced} 成功, ${data.failed} 失败 (共 ${data.total} 个客户)`,
+              data.failed > 0 ? 'error' : 'success');
+    import('./dashboard.js').then(m => m.refreshDashboard());
+  } catch (e) {
+    showToast('飞书同步失败: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📤 同步到飞书';
+  }
+}

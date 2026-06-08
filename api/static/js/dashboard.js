@@ -269,7 +269,7 @@ function renderActions() {
       <div class="action-checkbox" onclick="event.stopPropagation();window._completeAction(${a.id}, this)">✓</div>
       <div class="action-body">
         <div class="action-name">${esc(a.name)}</div>
-        <div class="action-desc">${esc(a.desc)} <span style="color:var(--gold);font-size:10px">→ 生成话术</span></div>
+        <div class="action-desc">${esc(a.desc)} ${a._generated || a.reply_draft ? '<span style="color:var(--green);font-size:10px">✓ 话术已生成</span>' : '<span style="color:var(--gold);font-size:10px">→ 生成话术</span>'}</div>
       </div>
     </div>`).join('');
 }
@@ -333,6 +333,36 @@ window._completeAction = (id, el) => {
 
 window._toggleBriefing = toggleBriefing;
 window._copyBriefing = copyBriefing;
+
+// ── Batch Generate Replies ──
+
+window._batchGenerateReplies = async function() {
+  const pending = state.actions.filter(a => !a.done);
+  if (!pending.length) {
+    showToast('没有待处理的行动项');
+    return;
+  }
+  const btn = document.getElementById('batchGenBtn');
+  btn.disabled = true;
+  let ok = 0, fail = 0;
+  for (const a of pending) {
+    btn.textContent = `🤖 ${ok + fail + 1}/${pending.length}...`;
+    try {
+      const resp = await fetch(`/api/leads/actions/${a.id}/generate-reply`, { method: 'POST' });
+      if (resp.ok) {
+        const data = await resp.json();
+        a._draft = data.draft || '';
+        a._generated = true;
+        ok++;
+      } else { fail++; }
+    } catch { fail++; }
+  }
+  // Re-render with generated markers
+  renderActions();
+  btn.textContent = '🤖 批量生成话术';
+  btn.disabled = false;
+  showToast(`话术生成完成: ${ok} 成功, ${fail} 失败`);
+};
 
 // ── Init ──
 

@@ -255,6 +255,10 @@ async def _execute_pipeline_all(run_id: str, req: PipelineRequest):
                     req.date, req.date_start, req.date_end,
                     limit=BATCH_LIMIT,
                 )
+
+                # 确保客户记录存在且带 nickname
+                from services.db import upsert_customer
+                upsert_customer(contact_id, nickname=display_name)
             except Exception:
                 failed += 1
                 continue
@@ -357,11 +361,13 @@ async def sync_feishu_all():
             continue
         try:
             profile = CustomerProfile.model_validate_json(profile_json)
-            # 补充强信号字段
-            if c.get("wechat_id") and not profile.wechat_id:
-                profile.wechat_id = c["wechat_id"]
-            if c.get("nickname") and not profile.wechat_name:
-                profile.wechat_name = c["nickname"]
+            # 补充唯一标识字段：wxid 作为 wechat_id 用于飞书去重
+            if not profile.wechat_id:
+                profile.wechat_id = c.get("wxid") or c.get("wechat_id")
+            if not profile.phone:
+                profile.phone = c.get("phone")
+            if not profile.wechat_name:
+                profile.wechat_name = c.get("nickname") or c.get("alias")
             await asyncio.to_thread(step_sync_feishu, profile)
             synced += 1
         except Exception as e:

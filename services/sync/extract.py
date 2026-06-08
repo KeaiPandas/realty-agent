@@ -402,6 +402,7 @@ def extract_dm_messages(
                     results.append(
                         {
                             "time": msg_time.strftime("%Y-%m-%d %H:%M"),
+                            "timestamp": row["CreateTime"],
                             "sender": sender,
                             "content": content.strip(),
                             "type": MSG_TYPES.get(row["Type"], f"类型{row['Type']}"),
@@ -466,6 +467,7 @@ def extract_dm_messages(
                 results.append(
                     {
                         "time": msg_time.strftime("%Y-%m-%d %H:%M"),
+                        "timestamp": row[1],
                         "sender": sender_name,
                         "content": content.strip(),
                         "type": MSG_TYPES.get(row[2], f"类型{row[2]}"),
