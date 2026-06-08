@@ -109,6 +109,8 @@ def persist_profile(wxid: str, profile) -> None:
             "流失待定": "initial",
         }
         kwargs["stage"] = stage_map.get(stage, stage if stage in ("initial", "intent", "showing", "closed") else "initial")
+        # AI 重新分组时清空用户手动设置的 group_id，以 AI 结果为准
+        kwargs["group_id"] = None
 
     # 从画像中提取强信号字段
     phone = getattr(profile, "phone", None)

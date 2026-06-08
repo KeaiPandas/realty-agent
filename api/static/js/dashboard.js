@@ -248,14 +248,18 @@ function renderNotable() {
   count.textContent = items.length + ' 条';
   if (!items.length) { list.innerHTML = '<div class="empty-state">暂无</div>'; return; }
   list.innerHTML = items.map(n => `
-    <div class="notable-card">
+    <div class="notable-card" data-wxid="${esc(n.wxid || '')}">
       <div class="notable-top">
         <span class="notable-name">${esc(n.name)}</span>
         <span class="notable-time">${esc(n.time)}</span>
       </div>
       <div class="notable-summary">${esc(n.summary)}</div>
-      <div class="notable-tags">${n.tags.map(t => `<span class="tag ${tagClass(t)}">${esc(t)}</span>`).join('')}</div>
+      <div class="notable-tags">
+        ${groupDropdownHTML(n.wxid, n.group)}
+        ${n.tags.map(t => `<span class="tag ${tagClass(t)}">${esc(t)}</span>`).join('')}
+      </div>
     </div>`).join('');
+  bindGroupDropdowns(list);
 }
 
 function renderActions() {
@@ -281,12 +285,15 @@ function renderSources() {
   count.textContent = items.length + ' 人';
   if (!items.length) { list.innerHTML = '<div class="empty-state">暂无</div>'; return; }
   list.innerHTML = items.map(s => `
-    <div class="source-card">
+    <div class="source-card" data-wxid="${esc(s.wxid || '')}">
       <div class="source-avatar">${esc(s.name[0])}</div>
       <div class="source-info">
         <div class="source-name">${esc(s.name)}</div>
         <div class="source-detail">${s.messages} 条 · ${esc(s.lastActive)}</div>
-        <div class="source-tags">${s.tags.map(t => `<span class="tag ${tagClass(t)}">${esc(t)}</span>`).join('')}</div>
+        <div class="source-tags">
+          ${groupDropdownHTML(s.wxid, s.group)}
+          ${s.tags.map(t => `<span class="tag ${tagClass(t)}">${esc(t)}</span>`).join('')}
+        </div>
       </div>
     </div>`).join('');
 }
@@ -294,6 +301,53 @@ function renderSources() {
 function toggleBriefing() {
   document.getElementById('briefingCard').classList.toggle('open');
 }
+
+// ── Group dropdown component for customer cards ──
+
+function groupDropdownHTML(wxid, currentGroup) {
+  if (!wxid) return '';
+  const grps = (window._gm ? window._gm.getGroups() : []) || [];
+  const current = grps.find(g => g.id === currentGroup);
+  const label = current ? current.name : '未分组';
+  const color = current ? current.color : '#6b7280';
+  const options = grps.filter(g => g.id !== 'all').map(g =>
+    `<div class="gd-opt ${g.id === currentGroup ? 'active' : ''}" data-wxid="${esc(wxid)}" data-group="${g.id}">
+      <span class="gd-dot" style="background:${g.color}"></span>${esc(g.name)}
+    </div>`
+  ).join('');
+  return `<div class="gd" data-wxid="${esc(wxid)}">
+    <button class="gd-btn" style="border-color:${color};color:${color}" title="切换分组">${esc(label)}</button>
+    <div class="gd-menu">${options}</div>
+  </div>`;
+}
+
+function bindGroupDropdowns(container) {
+  container.querySelectorAll('.gd-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const menu = btn.nextElementSibling;
+      // Close other menus
+      document.querySelectorAll('.gd-menu.open').forEach(m => { if (m !== menu) m.classList.remove('open'); });
+      menu.classList.toggle('open');
+    });
+  });
+  container.querySelectorAll('.gd-opt').forEach(opt => {
+    opt.addEventListener('click', async e => {
+      e.stopPropagation();
+      const wxid = opt.dataset.wxid;
+      const groupId = opt.dataset.group;
+      const menu = opt.closest('.gd-menu');
+      menu.classList.remove('open');
+      if (window._gm) {
+        const ok = await window._gm.assignCustomerGroup(wxid, groupId);
+        if (ok) showToast('分组已更新');
+      }
+    });
+  });
+}
+
+// Expose group-manager import for inline access
+export function setGroupManager(gm) { window._gm = gm; }
 
 function showToast(message, type = 'success') {
   const existing = document.querySelector('.toast');
@@ -370,9 +424,10 @@ export async function initDashboard() {
   document.getElementById('lastSync').textContent = '加载中...';
 
   // Init group manager
-  const { renderGroups, setGroupChangeCallback } = await import('./group-manager.js');
-  setGroupChangeCallback(onGroupChange);
-  renderGroups();
+  const gm = await import('./group-manager.js');
+  gm.setGroupChangeCallback(onGroupChange);
+  setGroupManager(gm);
+  gm.renderGroups();
 
   // Init sync modal
   await import('./sync-modal.js');

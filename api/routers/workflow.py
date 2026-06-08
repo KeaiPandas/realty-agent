@@ -158,6 +158,20 @@ async def _execute_pipeline(run_id: str, req: PipelineRequest):
         contact_db = get_contact_db(db_paths)
         contact_profile = (get_contact_profiles(contact_db).get(req.contact_id) if contact_db else None) or {}
 
+        # 写入联系人 alias/remark/nickname
+        from services.db import upsert_customer
+        cust_kwargs = {}
+        if contact_profile.get("nickname"):
+            cust_kwargs["nickname"] = contact_profile["nickname"]
+        if contact_profile.get("alias"):
+            cust_kwargs["alias"] = contact_profile["alias"]
+            if not contact_profile["alias"].startswith("wxid_"):
+                cust_kwargs["wechat_id"] = contact_profile["alias"]
+        if contact_profile.get("remark"):
+            cust_kwargs["remark"] = contact_profile["remark"]
+        if cust_kwargs:
+            upsert_customer(req.contact_id, **cust_kwargs)
+
         msg_count = persist_messages(req.contact_id, messages, contact_profile)
         log_pipeline_event("pipeline_progress", run_id=run_id,
                            message=f"写入 {msg_count} 条消息到本地数据库")
@@ -256,9 +270,16 @@ async def _execute_pipeline_all(run_id: str, req: PipelineRequest):
                     limit=BATCH_LIMIT,
                 )
 
-                # 确保客户记录存在且带 nickname
+                # 确保客户记录存在且带完整信息
                 from services.db import upsert_customer
-                upsert_customer(contact_id, nickname=display_name)
+                cust_kwargs = {"nickname": display_name}
+                if contact.get("alias"):
+                    cust_kwargs["alias"] = contact["alias"]
+                    if not contact["alias"].startswith("wxid_"):
+                        cust_kwargs["wechat_id"] = contact["alias"]
+                if contact.get("remark"):
+                    cust_kwargs["remark"] = contact["remark"]
+                upsert_customer(contact_id, **cust_kwargs)
             except Exception:
                 failed += 1
                 continue

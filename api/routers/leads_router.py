@@ -1,11 +1,15 @@
 """线索情报 API"""
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from services.leads.risk_engine import get_risk_leads, update_all_risks
 from services.leads.action_extractor import get_today_actions, extract_actions_from_leads
 from services.leads.briefing import generate_briefing
 from services.leads.stats import get_stats
-from services.db import update_action, get_customers_by_category, get_group_stats
+from services.db import (
+    update_action, get_customers_by_category,
+    get_group_stats, create_group, delete_group, set_customer_group,
+)
 
 router = APIRouter()
 
@@ -89,7 +93,8 @@ def list_customers(cat: str = Query("active", description="分类: active|pendin
         result.append({
             "wxid": c["wxid"],
             "name": c.get("remark") or c.get("nickname") or c.get("alias") or c["wxid"],
-            "group": _stage_to_group(c.get("stage", "initial")),
+            "group": c.get("group_id") or _stage_to_group(c.get("stage", "initial")),
+            "group_id": c.get("group_id"),
             "messages": c.get("message_count", 0),
             "lastActive": last_active,
             "tags": tags,
@@ -104,9 +109,43 @@ def list_customers(cat: str = Query("active", description="分类: active|pendin
 
 @router.get("/groups")
 def list_groups():
-    """返回分组统计（合并后端 stage 数据 + 前端自定义分组）"""
-    groups = get_group_stats()
-    return {"groups": groups}
+    """返回所有分组 + 人数统计"""
+    return {"groups": get_group_stats()}
+
+
+class CreateGroupRequest(BaseModel):
+    name: str
+    color: str = "#6b7280"
+
+
+@router.post("/groups")
+def api_create_group(req: CreateGroupRequest):
+    """创建自定义分组"""
+    if not req.name.strip():
+        return {"error": "分组名称不能为空"}
+    return create_group(req.name.strip(), req.color)
+
+
+@router.delete("/groups/{group_id}")
+def api_delete_group(group_id: str):
+    """删除自定义分组"""
+    ok = delete_group(group_id)
+    if not ok:
+        return {"error": "系统分组不可删除"}
+    return {"ok": True}
+
+
+class SetGroupRequest(BaseModel):
+    group_id: str | None = None
+
+
+@router.patch("/customers/{wxid}/group")
+def api_set_customer_group(wxid: str, req: SetGroupRequest):
+    """设置客户的分组。group_id=null 回到 AI 自动分组。"""
+    ok = set_customer_group(wxid, req.group_id)
+    if not ok:
+        return {"error": "客户或分组不存在"}
+    return {"ok": True}
 
 
 @router.post("/actions/{action_id}/generate-reply")

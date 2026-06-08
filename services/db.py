@@ -87,15 +87,53 @@ def init_db():
     conn.executescript(_SCHEMA)
     # 增量迁移：为旧表添加新列
     _migrate(conn)
+    # 初始化系统分组
+    _init_groups(conn)
     conn.close()
 
 
 def _migrate(conn):
     """检查并添加缺失的列（兼容已有数据库）"""
-    existing = {r[1] for r in conn.execute("PRAGMA table_info(actions)").fetchall()}
-    if "reply_draft" not in existing:
+    # customers 表新增 group_id 列
+    cust_cols = {r[1] for r in conn.execute("PRAGMA table_info(customers)").fetchall()}
+    if "group_id" not in cust_cols:
+        conn.execute("ALTER TABLE customers ADD COLUMN group_id TEXT DEFAULT NULL")
+        conn.commit()
+    # actions 表
+    act_cols = {r[1] for r in conn.execute("PRAGMA table_info(actions)").fetchall()}
+    if "reply_draft" not in act_cols:
         conn.execute("ALTER TABLE actions ADD COLUMN reply_draft TEXT")
         conn.commit()
+
+
+_SYSTEM_GROUPS = [
+    ("ungrouped", "未分组", "#6b7280", "initial", 0, 1),
+    ("high_intent", "高意向客户", "#10b981", "intent", 1, 1),
+    ("showing", "带看谈判中", "#3b82f6", "showing", 2, 1),
+    ("closed", "已成交", "#c9a24d", "closed", 3, 1),
+    ("silent", "沉默预警", "#f59e0b", None, 4, 1),
+]
+
+
+def _init_groups(conn):
+    """确保系统分组存在。"""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS groups (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            color TEXT DEFAULT '#6b7280',
+            stage_value TEXT,
+            sort_order INTEGER DEFAULT 0,
+            is_system INTEGER DEFAULT 0
+        )"""
+    )
+    for gid, name, color, stage_val, sort, is_sys in _SYSTEM_GROUPS:
+        conn.execute(
+            "INSERT OR IGNORE INTO groups (id, name, color, stage_value, sort_order, is_system) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (gid, name, color, stage_val, sort, is_sys),
+        )
+    conn.commit()
 
 
 # ── 客户 CRUD ──
@@ -428,56 +466,152 @@ def get_customers_by_category(cat: str) -> list[dict]:
 
 
 def get_group_stats() -> list[dict]:
-    """按 stage 聚合客户数量，返回分组列表。"""
+    """返回所有分组 + 人数统计。
+
+    分组优先级：customers.group_id（手动） > customers.stage（AI 自动）。
+    """
     conn = get_conn()
+
+    # 1. 从 groups 表加载所有分组定义
     rows = conn.execute(
-        "SELECT stage, COUNT(*) as cnt FROM customers GROUP BY stage"
+        "SELECT id, name, color, stage_value, sort_order, is_system FROM groups ORDER BY sort_order"
     ).fetchall()
+    group_defs = {}
+    for r in rows:
+        group_defs[r["id"]] = {
+            "id": r["id"],
+            "name": r["name"],
+            "color": r["color"],
+            "stage_value": r["stage_value"],
+            "sort_order": r["sort_order"],
+            "is_system": bool(r["is_system"]),
+            "count": 0,
+        }
     conn.close()
 
-    stage_map = {
-        "initial": {"id": "ungrouped", "name": "初次咨询", "color": "#6b7280"},
-        "intent": {"id": "high_intent", "name": "高意向客户", "color": "#10b981"},
-        "showing": {"id": "showing", "name": "带看谈判中", "color": "#3b82f6"},
-        "closed": {"id": "closed", "name": "已成交", "color": "#c9a24d"},
-    }
+    # 2. 统计人数 — 按 stage 分组（AI 自动）
+    stage_to_group = {}
+    for g in group_defs.values():
+        if g["stage_value"]:
+            stage_to_group[g["stage_value"]] = g["id"]
 
-    groups = []
+    conn = get_conn()
+    stage_rows = conn.execute(
+        "SELECT stage, COUNT(*) as cnt FROM customers WHERE group_id IS NULL GROUP BY stage"
+    ).fetchall()
+
     total = 0
-    for r in rows:
+    for r in stage_rows:
         stage = r["stage"] or "initial"
         cnt = r["cnt"]
         total += cnt
-        meta = stage_map.get(stage, {"id": "ungrouped", "name": stage, "color": "#6b7280"})
+        gid = stage_to_group.get(stage, "ungrouped")
+        if gid in group_defs:
+            group_defs[gid]["count"] += cnt
+        else:
+            # stage 没有对应分组 → 归入"未分组"
+            group_defs["ungrouped"]["count"] += cnt
 
-        # 沉默预警：stage 有意向但 last_message_at 超过7天
-        # 这里简化处理：直接按 stage 分组
-        groups.append({
-            "id": meta["id"],
-            "name": meta["name"],
-            "color": meta["color"],
-            "count": cnt,
-        })
+    # 3. 统计自定义分组人数 — 按 group_id
+    custom_rows = conn.execute(
+        "SELECT group_id, COUNT(*) as cnt FROM customers WHERE group_id IS NOT NULL GROUP BY group_id"
+    ).fetchall()
+    for r in custom_rows:
+        gid = r["group_id"]
+        cnt = r["cnt"]
+        total += cnt
+        if gid in group_defs:
+            group_defs[gid]["count"] += cnt
+    conn.close()
 
-    # 加上沉默预警分组（stage有意向但沉默>7天）
+    # 4. 沉默预警：stage=intent/showing 且 last_message_at > 7天
     now = time.time()
     d7 = now - 7 * 86400
     conn = get_conn()
     silent_count = conn.execute(
         "SELECT COUNT(*) FROM customers WHERE last_message_at < ? "
-        "AND stage IN ('intent', 'showing') AND message_count > 0",
+        "AND stage IN ('intent', 'showing') AND message_count > 0 AND group_id IS NULL",
         (d7,),
     ).fetchone()[0]
     conn.close()
-    if silent_count > 0:
-        groups.append({
-            "id": "silent",
-            "name": "沉默预警",
-            "color": "#f59e0b",
-            "count": silent_count,
-        })
+    if "silent" in group_defs:
+        group_defs["silent"]["count"] = silent_count
 
-    return groups
+    # 5. 组装结果 — 加上"全部"
+    result = [{"id": "all", "name": "全部客户", "color": "#9ca3af", "count": total, "is_system": True}]
+    result.extend(group_defs.values())
+    return result
+
+
+# ── 分组 CRUD ──
+
+def create_group(name: str, color: str = "#6b7280") -> dict:
+    """创建自定义分组，返回分组信息。"""
+    import uuid
+    gid = f"custom_{uuid.uuid4().hex[:8]}"
+    conn = get_conn()
+    # 新分组排最后
+    max_sort = conn.execute("SELECT COALESCE(MAX(sort_order), 0) FROM groups").fetchone()[0]
+    conn.execute(
+        "INSERT INTO groups (id, name, color, stage_value, sort_order, is_system) VALUES (?, ?, ?, NULL, ?, 0)",
+        (gid, name, color, max_sort + 1),
+    )
+    conn.commit()
+    conn.close()
+    return {"id": gid, "name": name, "color": color, "count": 0, "is_system": False}
+
+
+def delete_group(group_id: str) -> bool:
+    """删除自定义分组。系统分组不可删。组内客户的 group_id 清空（回到 AI 分组）。"""
+    conn = get_conn()
+    grp = conn.execute("SELECT is_system FROM groups WHERE id = ?", (group_id,)).fetchone()
+    if not grp or grp["is_system"]:
+        conn.close()
+        return False
+    # 清空该组内客户的 group_id
+    conn.execute("UPDATE customers SET group_id = NULL WHERE group_id = ?", (group_id,))
+    conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def set_customer_group(wxid: str, group_id: str | None) -> bool:
+    """设置客户的分组。
+
+    - 系统分组（有 stage_value）：更新 stage 并清空 group_id
+    - 自定义分组：设置 group_id
+    - group_id=None：清空 group_id，回到 stage 分组
+    """
+    conn = get_conn()
+    customer = conn.execute("SELECT wxid FROM customers WHERE wxid = ?", (wxid,)).fetchone()
+    if not customer:
+        conn.close()
+        return False
+
+    if group_id is None:
+        # 回到 AI 分组
+        conn.execute("UPDATE customers SET group_id = NULL WHERE wxid = ?", (wxid,))
+    else:
+        grp = conn.execute("SELECT stage_value FROM groups WHERE id = ?", (group_id,)).fetchone()
+        if not grp:
+            conn.close()
+            return False
+        if grp["stage_value"]:
+            # 系统分组 → 更新 stage，清空 group_id
+            conn.execute(
+                "UPDATE customers SET stage = ?, group_id = NULL WHERE wxid = ?",
+                (grp["stage_value"], wxid),
+            )
+        else:
+            # 自定义分组 → 设置 group_id
+            conn.execute(
+                "UPDATE customers SET group_id = ? WHERE wxid = ?",
+                (group_id, wxid),
+            )
+    conn.commit()
+    conn.close()
+    return True
 
 
 def get_customer_messages_stats(wxid: str) -> dict:
