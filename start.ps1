@@ -1,4 +1,4 @@
-# Realty Agent 启动脚本
+﻿# Realty Agent 启动脚本
 # 双击运行，或在 PowerShell 中: .\start.ps1
 
 $ErrorActionPreference = "Stop"

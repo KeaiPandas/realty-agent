@@ -1,4 +1,4 @@
-# Realty Agent 一键安装脚本
+﻿# Realty Agent 一键安装脚本
 # 在新 Windows 上：右键 → 使用 PowerShell 运行，或在 PowerShell 中：
 #   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 #   .\setup.ps1
