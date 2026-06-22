@@ -44,6 +44,7 @@ frontend/dist/
 logs/
 wxauto_logs/
 @AutomationLog.txt
+*.log
 
 # Local reference repos used during debugging
 _vendor/
